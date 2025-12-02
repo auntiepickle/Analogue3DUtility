@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
 """
-Analogue 3D Updater – Firmware + Labels + Backup/Restore
-- Always uses forward slashes in zip paths (bulletproof on Windows)
-- Explicitly adds directory entries for everything that needs it
-- Uses b'' for directory entries (no zero-byte files ever created)
-- Tested logic on Windows: empty folders restore as folders, never as files
+Analogue 3D Updater – Firmware + Labels + Backup/Restore + Clean Backups
+The FINAL complete one-stop tool for your Analogue 3D (December 2025+)
+Now with backup cleaning – keep your backups folder tidy!
 """
 
 import os
@@ -168,7 +166,6 @@ def create_backup(target_root):
     backup_filename = f"analogue3d_backup_{timestamp}.zip"
     backup_path = os.path.join(backup_dir, backup_filename)
     
-    # Case-insensitive detection, exact casing preserved
     folders_to_backup = []
     for entry in os.listdir(target_root):
         entry_lower = entry.lower()
@@ -184,20 +181,16 @@ def create_backup(target_root):
     with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for folder in folders_to_backup:
             folder_path = os.path.join(target_root, folder)
-            
-            # Always add top-level directory entry
             zip_arcname = folder.replace(os.sep, '/') + '/'
             zipf.writestr(zip_arcname, b'')
             
             for root, dirs, files in os.walk(folder_path):
-                # Add empty subdirectories
                 for d in dirs:
                     subdir_path = os.path.join(root, d)
-                    if not os.listdir(subdir_path):  # truly empty
+                    if not os.listdir(subdir_path):
                         rel = os.path.relpath(subdir_path, target_root).replace(os.sep, '/') + '/'
                         zipf.writestr(rel, b'')
                 
-                # Add files
                 for file in files:
                     full_path = os.path.join(root, file)
                     arcname = os.path.relpath(full_path, target_root).replace(os.sep, '/')
@@ -222,7 +215,9 @@ def restore_backup(target_root):
     
     print("Available backups (newest first):")
     for i, backup in enumerate(backups):
-        print(f"  {i+1}) {backup}")
+        path = os.path.join(backup_dir, backup)
+        size_mb = os.path.getsize(path) // (1024**1024)
+        print(f"  {i+1}) {backup} ({size_mb} MB)")
     
     choice = input("\nSelect backup to restore (number): ").strip()
     try:
@@ -242,14 +237,82 @@ def restore_backup(target_root):
     with zipfile.ZipFile(backup_path, 'r') as zipf:
         zipf.extractall(target_root)
     
-    print("Restore completed successfully! Empty folders (like Settings/Global) are now properly restored as folders.")
+    print("Restore completed successfully!")
+
+def clean_backups():
+    print("\n=== Clean Backups ===")
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    backup_dir = os.path.join(script_dir, "backups")
+    
+    if not os.path.exists(backup_dir):
+        print("No backups folder found (nothing to clean).")
+        return
+        
+    backups = sorted([f for f in os.listdir(backup_dir) 
+                     if f.startswith("analogue3d_backup_") and f.endswith(".zip")], reverse=True)
+    
+    if not backups:
+        print("No backups found.")
+        return
+    
+    print("Current backups (newest first):")
+    total_size = 0
+    for i, backup in enumerate(backups):
+        path = os.path.join(backup_dir, backup)
+        size_mb = os.path.getsize(path) // (1024**1024)
+        total_size += size_mb
+        print(f"  {i+1}) {backup} ({size_mb} MB)")
+    print(f"\nTotal backups: {len(backups)} | Total size: {total_size} MB")
+    
+    choice = input("\nEnter numbers to delete (e.g. 2,4,5), 'all', or 0 to cancel: ").strip().lower()
+    
+    if choice == "0" or choice == "":
+        print("Cancelled.")
+        return
+    
+    to_delete = []
+    if choice == "all":
+        confirm = input("Delete ALL backups? Type YES to confirm: ").strip()
+        if confirm == "YES":
+            to_delete = backups
+        else:
+            print("Cancelled.")
+            return
+    else:
+        try:
+            indices = [int(x.strip()) - 1 for x in choice.split(",") if x.strip()]
+            to_delete = [backups[i] for i in indices if 0 <= i < len(backups)]
+        except:
+            print("Invalid input.")
+            return
+    
+    if not to_delete:
+        print("Nothing selected.")
+        return
+    
+    confirm = input(f"\nDelete {len(to_delete)} backup(s)? Type YES to confirm: ").strip()
+    if confirm != "YES":
+        print("Cancelled.")
+        return
+    
+    deleted = 0
+    for backup in to_delete:
+        path = os.path.join(backup_dir, backup)
+        try:
+            os.remove(path)
+            print(f"  Deleted {backup}")
+            deleted += 1
+        except:
+            print(f"  Failed to delete {backup}")
+    
+    print(f"\nClean complete! {deleted} backup(s) deleted.")
 
 def main():
-    print("=============================================")
-    print("   Analogue 3D Complete Updater Tool")
-    print("   Firmware ▪ Labels ▪ Backup ▪ Restore")
-    print("   Empty folders 100% fixed (Dec 2025)")
-    print("=============================================\n")
+    print("=================================================")
+    print("   Analogue 3D Complete Updater Tool – FINAL")
+    print("   Firmware ▪ Labels ▪ Backup ▪ Restore ▪ Clean")
+    print("=================================================\n")
     
     while True:
         print("What do you want to do?")
@@ -258,43 +321,48 @@ def main():
         print("3) Update Firmware only")
         print("4) Create Backup (Library + Settings)")
         print("5) Restore Backup")
+        print("6) Clean Backups (delete old backups)")
         print("0) Quit")
         
-        choice = input("\nEnter choice (0-5): ").strip()
+        choice = input("\nEnter choice (0-6): ").strip()
         
-        if choice not in ["0","1","2","3","4","5"]:
+        if choice not in ["0","1","2","3","4","5","6"]:
             print("Invalid choice, try again.\n")
             continue
         
         if choice == "0":
-            print("Goodbye! Enjoy your Analogue 3D 🚀")
+            print("Goodbye! Enjoy your perfectly maintained Analogue 3D 🚀")
             sys.exit(0)
         
-        target_root = select_sd_card()
-        
-        if choice in ["1", "2", "3"]:
+        if choice == "6":
+            clean_backups()
+        else:
+            # All other options need the SD card
+            target_root = select_sd_card()
+            
+            if choice in ["1", "2", "3"]:
+                if choice in ["1", "3"]:
+                    install_firmware(target_root)
+                if choice in ["1", "2"]:
+                    install_labels(target_root)
+                print("\n🎉 Update tasks completed!")
+            
+            elif choice == "4":
+                create_backup(target_root)
+            
+            elif choice == "5":
+                restore_backup(target_root)
+            
+            print("\nSafely eject your SD card when ready.")
             if choice in ["1", "3"]:
-                install_firmware(target_root)
-            if choice in ["1", "2"]:
-                install_labels(target_root)
-            print("\n🎉 Update tasks completed!")
+                print("For firmware update: hold Pairing + Power on boot.")
         
-        elif choice == "4":
-            create_backup(target_root)
-        
-        elif choice == "5":
-            restore_backup(target_root)
-        
-        print("\nSafely eject your SD card when ready.")
-        if choice in ["1", "3"]:
-            print("For firmware update: hold Pairing + Power on boot.")
         print()
-        
         again = input("Do another operation? (y/n): ").strip().lower()
         if again != "y":
-            print("All done! See you next time 🚀")
+            print("All done! Your Analogue 3D is in perfect shape 🚀")
             break
-        print("\n" + "="*50 + "\n")
+        print("\n" + "="*60 + "\n")
 
 if __name__ == "__main__":
     try:
