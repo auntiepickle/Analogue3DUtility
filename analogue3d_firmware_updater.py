@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 
 """
-Analogue 3D Updater – Firmware + Cartridge Labels (labels.db)
-Fixed for December 2025+: labels.db is now hosted as a GitHub Release asset
-(so raw/main 404s – we now use /releases/latest/download/ which always gets the newest)
+Analogue 3D Updater – Firmware + Labels + Backup/Restore
+- Always uses forward slashes in zip paths (bulletproof on Windows)
+- Explicitly adds directory entries for everything that needs it
+- Uses b'' for directory entries (no zero-byte files ever created)
+- Tested logic on Windows: empty folders restore as folders, never as files
 """
 
 import os
 import sys
 import shutil
+import zipfile
 import requests
 from bs4 import BeautifulSoup
 import psutil
 from urllib.parse import urljoin
+from datetime import datetime
 
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
-# Fixed URL – always downloads the absolute latest labels.db from RetroGameCorps
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
 LABELS_DB_FILENAME = "labels.db"
-LABELS_DB_PATH_ON_CARD = os.path.join("Library", "N64", "Images", LABELS_DB_FILENAME)
 
 def get_latest_firmware_url():
     print("Fetching latest firmware info from Analogue...")
@@ -44,7 +46,7 @@ def get_latest_firmware_url():
     return download_url, filename
 
 def download_file(url, dest_folder="."):
-    filename = url.split("/")[-1].split("?")[0]  # Clean any redirects/query params
+    filename = url.split("/")[-1].split("?")[0]
     filepath = os.path.join(dest_folder, filename)
     
     print(f"Downloading {filename}...")
@@ -115,7 +117,7 @@ def select_sd_card():
     return target_root
 
 def install_firmware(target_root):
-    print("\n=== Updating Analogue 3D OS ===")
+    print("\n=== Updating Analogue 3D Firmware ===")
     fw_url, fw_filename = get_latest_firmware_url()
     if not fw_url:
         return False
@@ -126,7 +128,6 @@ def install_firmware(target_root):
     print(f"Copying {fw_filename} to SD card root...")
     shutil.copy(local_fw_path, dest_path)
     
-    # Clean up old firmware files
     print("Removing old firmware files...")
     removed = 0
     for entry in os.listdir(target_root):
@@ -144,7 +145,7 @@ def install_firmware(target_root):
     return True
 
 def install_labels(target_root):
-    print("\n=== Installing/Updating Cartridge Labels Database ===")
+    print("\n=== Installing/Updating Cartridge Labels ===")
     local_labels_path = download_file(LABELS_DB_URL, dest_folder=".")
     
     labels_dir = os.path.join(target_root, "Library", "N64", "Images")
@@ -154,55 +155,146 @@ def install_labels(target_root):
     print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
     shutil.copy(local_labels_path, dest_path)
     
-    print("Cartridge labels installed/updated! Beautiful stock cartridge art will now appear when you insert games.")
+    print("Cartridge labels updated → beautiful cartridge art will now show!")
+
+def create_backup(target_root):
+    print("\n=== Creating Backup ===")
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    backup_dir = os.path.join(script_dir, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_filename = f"analogue3d_backup_{timestamp}.zip"
+    backup_path = os.path.join(backup_dir, backup_filename)
+    
+    # Case-insensitive detection, exact casing preserved
+    folders_to_backup = []
+    for entry in os.listdir(target_root):
+        entry_lower = entry.lower()
+        entry_path = os.path.join(target_root, entry)
+        if os.path.isdir(entry_path) and entry_lower in {"library", "settings"}:
+            folders_to_backup.append(entry)
+    
+    if not folders_to_backup:
+        print("Warning: No Library or Settings folder found. Creating empty backup anyway.")
+    else:
+        print(f"Backing up folders (exact casing preserved): {', '.join(folders_to_backup)}")
+    
+    with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for folder in folders_to_backup:
+            folder_path = os.path.join(target_root, folder)
+            
+            # Always add top-level directory entry
+            zip_arcname = folder.replace(os.sep, '/') + '/'
+            zipf.writestr(zip_arcname, b'')
+            
+            for root, dirs, files in os.walk(folder_path):
+                # Add empty subdirectories
+                for d in dirs:
+                    subdir_path = os.path.join(root, d)
+                    if not os.listdir(subdir_path):  # truly empty
+                        rel = os.path.relpath(subdir_path, target_root).replace(os.sep, '/') + '/'
+                        zipf.writestr(rel, b'')
+                
+                # Add files
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(full_path, target_root).replace(os.sep, '/')
+                    zipf.write(full_path, arcname)
+    
+    print(f"Backup created successfully!")
+    print(f"Location: {backup_path}")
+
+def restore_backup(target_root):
+    print("\n=== Restore Backup ===")
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    backup_dir = os.path.join(script_dir, "backups")
+    
+    if not os.path.exists(backup_dir) or not os.listdir(backup_dir):
+        print("No backups found!")
+        print(f"Backups are stored in: {backup_dir}")
+        return
+    
+    backups = sorted([f for f in os.listdir(backup_dir) 
+                     if f.startswith("analogue3d_backup_") and f.endswith(".zip")], reverse=True)
+    
+    print("Available backups (newest first):")
+    for i, backup in enumerate(backups):
+        print(f"  {i+1}) {backup}")
+    
+    choice = input("\nSelect backup to restore (number): ").strip()
+    try:
+        selected_backup = backups[int(choice) - 1]
+    except:
+        print("Invalid selection.")
+        return
+    
+    backup_path = os.path.join(backup_dir, selected_backup)
+    
+    confirm = input(f"\nWARNING: This will OVERWRITE all files in Library/Settings folders!\nType YES to continue: ").strip()
+    if confirm != "YES":
+        print("Restore cancelled.")
+        return
+    
+    print(f"Restoring {selected_backup}...")
+    with zipfile.ZipFile(backup_path, 'r') as zipf:
+        zipf.extractall(target_root)
+    
+    print("Restore completed successfully! Empty folders (like Settings/Global) are now properly restored as folders.")
 
 def main():
-    print("=====================================")
-    print("   Analogue 3D Updater Tool")
-    print("   Firmware + Cartridge Labels (Dec 2025+)")
-    print("=====================================\n")
+    print("=============================================")
+    print("   Analogue 3D Complete Updater Tool")
+    print("   Firmware ▪ Labels ▪ Backup ▪ Restore")
+    print("   Empty folders 100% fixed (Dec 2025)")
+    print("=============================================\n")
     
     while True:
         print("What do you want to do?")
-        print("1) Install ALL (OS + Cartridge Labels)")
-        print("2) Install Cartridge Labels only")
-        print("3) Update OS (Firmware) only")
+        print("1) Install ALL (Firmware + Labels)")
+        print("2) Install Labels only")
+        print("3) Update Firmware only")
+        print("4) Create Backup (Library + Settings)")
+        print("5) Restore Backup")
         print("0) Quit")
         
-        choice = input("\nEnter choice (0-3): ").strip()
+        choice = input("\nEnter choice (0-5): ").strip()
         
-        if choice not in ["0", "1", "2", "3"]:
+        if choice not in ["0","1","2","3","4","5"]:
             print("Invalid choice, try again.\n")
             continue
         
         if choice == "0":
-            print("Goodbye!")
+            print("Goodbye! Enjoy your Analogue 3D 🚀")
             sys.exit(0)
-        
-        do_firmware = choice in ["1", "3"]
-        do_labels   = choice in ["1", "2"]
-        
-        if not (do_firmware or do_labels):
-            continue
         
         target_root = select_sd_card()
         
-        success = True
-        if do_firmware:
-            success &= install_firmware(target_root)
+        if choice in ["1", "2", "3"]:
+            if choice in ["1", "3"]:
+                install_firmware(target_root)
+            if choice in ["1", "2"]:
+                install_labels(target_root)
+            print("\n🎉 Update tasks completed!")
         
-        if do_labels:
-            install_labels(target_root)
+        elif choice == "4":
+            create_backup(target_root)
         
-        print("\n🎉 All selected tasks completed!")
-        print("Safely eject your SD card and enjoy your fully updated Analogue 3D!")
-        print("Firmware update → hold Pairing + Power on boot\n")
+        elif choice == "5":
+            restore_backup(target_root)
+        
+        print("\nSafely eject your SD card when ready.")
+        if choice in ["1", "3"]:
+            print("For firmware update: hold Pairing + Power on boot.")
+        print()
         
         again = input("Do another operation? (y/n): ").strip().lower()
         if again != "y":
-            print("All done! 🚀")
+            print("All done! See you next time 🚀")
             break
-        print("")
+        print("\n" + "="*50 + "\n")
 
 if __name__ == "__main__":
     try:
