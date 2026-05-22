@@ -7,9 +7,11 @@ Now with backup cleaning – keep your backups folder tidy!
 """
 
 import os
+import re
 import sys
 import shutil
 import zipfile
+import ctypes
 import requests
 from bs4 import BeautifulSoup
 import psutil
@@ -19,79 +21,125 @@ from datetime import datetime
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
 LABELS_DB_FILENAME = "labels.db"
+ANALOGUE_VOLUME_LABEL = "ANALOGUE 3D"
 
 def get_latest_firmware_url():
     print("Fetching latest firmware info from Analogue...")
     resp = requests.get(FIRMWARE_PAGE)
     resp.raise_for_status()
-    
+
     soup = BeautifulSoup(resp.text, "html.parser")
-    
+
     download_link = None
     for a in soup.find_all("a", href=True):
         if a.text and "Download [" in a.text and "MB" in a.text:
             download_link = a["href"]
             break
-    
+
     if not download_link:
         print("Error: Could not find download link. Site layout may have changed.")
         print(f"Check manually: {FIRMWARE_PAGE}")
         return None, None
-    
+
     download_url = urljoin(FIRMWARE_PAGE, download_link)
-    filename = download_url.split("/")[-1]
+
+    # The link is an intermediate URL like .../firmware/1.3.0/download — not the .bin file.
+    # Extract the version from the URL (or page) and build the canonical SD-card filename.
+    version = None
+    m = re.search(r"/firmware/(\d+)\.(\d+)\.(\d+)", download_url)
+    if not m:
+        m = re.search(r"Version\s+(\d+)\.(\d+)\.(\d+)", resp.text, re.IGNORECASE)
+    if m:
+        version = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        filename = f"a3d_os_{version[0]:02d}_{version[1]:02d}_{version[2]:02d}.bin"
+    else:
+        print("Error: Could not parse firmware version from page.")
+        return None, None
+
     print(f"Latest firmware: {filename}")
     return download_url, filename
 
-def download_file(url, dest_folder="."):
-    filename = url.split("/")[-1].split("?")[0]
+def download_file(url, dest_folder=".", filename=None):
+    if not filename:
+        filename = url.split("/")[-1].split("?")[0]
     filepath = os.path.join(dest_folder, filename)
-    
+
     print(f"Downloading {filename}...")
     r = requests.get(url, stream=True)
     r.raise_for_status()
-    
+
     with open(filepath, "wb") as f:
         for chunk in r.iter_content(chunk_size=8192):
             f.write(chunk)
-    
+
     print(f"Downloaded: {filepath}")
     return filepath
 
+def get_volume_label(mount):
+    """Return the volume label for a mount point, or '' if unknown."""
+    if sys.platform == "win32":
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            fs_buf = ctypes.create_unicode_buffer(1024)
+            root = mount if mount.endswith(os.sep) else mount + os.sep
+            rc = ctypes.windll.kernel32.GetVolumeInformationW(
+                ctypes.c_wchar_p(root),
+                buf, ctypes.sizeof(buf),
+                None, None, None,
+                fs_buf, ctypes.sizeof(fs_buf),
+            )
+            return buf.value if rc else ""
+        except Exception:
+            return ""
+    # macOS/Linux: volume label is the last path component of the mount point.
+    return os.path.basename(mount.rstrip(os.sep))
+
 def get_potential_sd_cards():
     candidates = []
-    
+
     for part in psutil.disk_partitions():
         mount = part.mountpoint
-        
+
         if not os.access(mount, os.W_OK):
             continue
-            
+
         is_removable = ("removable" in part.opts.lower() or "cdrom" not in part.opts.lower())
         is_sd_like = part.fstype.lower() in ["fat", "fat32", "exfat", "vfat", "ntfs"]
         is_external_path = mount.startswith(("/media/", "/Volumes/", "/mnt/"))
-        
+
         if (is_removable or is_sd_like or is_external_path):
             display_path = mount.rstrip(os.sep) + os.sep
             if display_path not in [c[0] for c in candidates]:
                 try:
                     free_gb = shutil.disk_usage(mount).free // (1024**3)
-                    candidates.append((display_path, free_gb))
                 except:
-                    candidates.append((display_path, 0))
-    
+                    free_gb = 0
+                label = get_volume_label(mount)
+                candidates.append((display_path, free_gb, label))
+
     return candidates
 
 def select_sd_card():
     print("\nLooking for SD cards / removable drives...")
     drives = get_potential_sd_cards()
-    
+
+    # Auto-pick a drive labeled "ANALOGUE 3D" if exactly one is found.
+    auto_picks = [d for d in drives if d[2].strip().upper() == ANALOGUE_VOLUME_LABEL]
+    if len(auto_picks) == 1:
+        path, free_gb, label = auto_picks[0]
+        print(f"Auto-detected Analogue 3D SD card: {path} [{label}] ({free_gb} GB free)")
+        confirm = input("Use this drive? [Y/n]: ").strip().lower()
+        if confirm in ("", "y", "yes"):
+            return path
+        print("OK, choose manually instead.")
+
     if drives:
         print("Found possible SD cards:")
-        for i, (path, free_gb) in enumerate(drives):
-            print(f"  {i+1}) {path} ({free_gb} GB free)")
+        for i, (path, free_gb, label) in enumerate(drives):
+            label_str = f" [{label}]" if label else ""
+            print(f"  {i+1}) {path}{label_str} ({free_gb} GB free)")
         print("  0) Enter path manually")
-        
+
         choice = input("\nSelect your SD card (number): ").strip()
         if choice == "0":
             target_root = input("Enter full path to SD card root (e.g. E:\\ or /Volumes/NO_NAME/): ").strip()
@@ -104,14 +152,14 @@ def select_sd_card():
     else:
         print("No removable drives detected automatically.")
         target_root = input("Enter full path to SD card root (e.g. E:\\ or /Volumes/NO_NAME/): ").strip()
-    
+
     if not os.path.exists(target_root):
         print("Error: Path doesn't exist.")
         sys.exit(1)
     if not os.access(target_root, os.W_OK):
         print("Error: Cannot write to that path.")
         sys.exit(1)
-    
+
     return target_root
 
 def install_firmware(target_root):
@@ -120,7 +168,7 @@ def install_firmware(target_root):
     if not fw_url:
         return False
         
-    local_fw_path = download_file(fw_url)
+    local_fw_path = download_file(fw_url, filename=fw_filename)
     dest_path = os.path.join(target_root, fw_filename)
     
     print(f"Copying {fw_filename} to SD card root...")
