@@ -2,22 +2,25 @@
   <img src="assets/banner.svg" width="100%" alt="Analogue 3D Utility">
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.7%2B-F4CD01?labelColor=0a0a0a" alt="Python 3.7+">
+  <img src="https://img.shields.io/badge/platforms-Windows%20·%20macOS%20·%20Linux-4ade80?labelColor=0a0a0a" alt="Platforms">
+  <img src="https://img.shields.io/badge/UI-arrow--key%20terminal-F4CD01?labelColor=0a0a0a" alt="Arrow-key terminal UI">
+</p>
+
 # Analogue 3D Utility
 
-A no-nonsense, cross-platform Python tool for keeping your **Analogue 3D** (and its
-**8BitDo 64** controller) up to date — firmware, cartridge labels, backups, and
-controller flashing — all from one terminal menu.
+A clean, dark, **terminal-native** companion for the **Analogue 3D** and its
+**8BitDo 64** controller. One arrow-key menu handles console firmware, cartridge
+art packs, save backups, and flashing the controller — no GUI, no vendor
+software, no driver swaps.
 
-Think of it as the spiritual successor to PocketSync, but for the Analogue 3D
-(until someone makes a proper GUI).
-
-> ### Usage in one line
-> **If you have Python, just run it** — the script installs anything it needs and
-> drops you into a menu:
+> ### One line to run it
+> **If you have Python, just run it** — the launcher installs anything it needs,
+> auto-detects your SD card, and drops you into the menu:
 > ```bash
 > python a3d.py
 > ```
-> It auto-detects your Analogue 3D SD card and walks you through the rest.
 
 ---
 
