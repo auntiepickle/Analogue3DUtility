@@ -7,6 +7,7 @@ import sys
 import shutil
 import zipfile
 import ctypes
+import time
 from urllib.parse import urljoin
 from datetime import datetime
 
@@ -289,6 +290,22 @@ def install_labels(target_root, source=None):
 
     print(green("Cartridge art pack installed - your cart art will now show."))
 
+def _zip_add_file(zipf, full_path, arcname):
+    """Add a file to the zip with a ZIP-safe timestamp. Some Analogue SD files
+    (e.g. library.db) carry a bogus/zero mtime that crashes zipfile's localtime()
+    with [Errno 22]; fall back to a valid date in that case."""
+    try:
+        dt = time.localtime(os.path.getmtime(full_path))[:6]
+        if dt[0] < 1980:
+            dt = (1980, 1, 1, 0, 0, 0)
+    except (OSError, ValueError, OverflowError):
+        dt = (1980, 1, 1, 0, 0, 0)
+    info = zipfile.ZipInfo(arcname, date_time=dt)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    with open(full_path, "rb") as f:
+        zipf.writestr(info, f.read())
+
+
 def create_backup(target_root):
     print("\n=== Creating Backup ===")
     
@@ -328,7 +345,7 @@ def create_backup(target_root):
                 for file in files:
                     full_path = os.path.join(root, file)
                     arcname = os.path.relpath(full_path, target_root).replace(os.sep, '/')
-                    zipf.write(full_path, arcname)
+                    _zip_add_file(zipf, full_path, arcname)
     
     print(f"Backup created successfully!")
     print(f"Location: {backup_path}")

@@ -364,6 +364,16 @@ def is_connected():
         return False
 
 
+def connected_count():
+    """How many 8BitDo 64 controllers are plugged in (by game-pad interface).
+    8BitDo 64s all report the same generic serial, so multiples can't be told
+    apart in software - the flasher refuses to act when more than one is present."""
+    if hid is None:
+        return 0
+    return sum(1 for d in hid.enumerate(VID, PID_APP)
+               if d.get("usage_page") == 0x01 and d.get("usage") == 0x05)
+
+
 def update_to_latest(progress=None):
     """Non-interactive: flash the latest firmware if the connected 64 is behind.
     Returns a short human-readable status string (used by the 'auto' flow)."""
@@ -371,6 +381,8 @@ def update_to_latest(progress=None):
         return "skipped (hidapi not installed)"
     if not is_connected():
         return "skipped (controller not connected)"
+    if connected_count() > 1:
+        return "skipped (multiple controllers connected - connect only one)"
     try:
         latest = fetch_firmware_list()[0]
         dev = EightBitDo64().open()
@@ -428,6 +440,10 @@ def run_interactive():
     print("\n=== Update 8BitDo 64 Controller Firmware ===")
     if hid is None:
         print("The 'hidapi' package is required. Run: pip install hidapi")
+        return
+    if connected_count() > 1:
+        print("Multiple 8BitDo 64 controllers are connected, and they can't be told")
+        print("apart in software. Please connect ONLY the controller you want to flash.")
         return
 
     try:
@@ -523,7 +539,7 @@ __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
     "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
     "parse_header", "flash", "reopen_and_read_version", "run_interactive",
-    "is_connected", "update_to_latest",
+    "is_connected", "connected_count", "update_to_latest",
 ]
 
 
