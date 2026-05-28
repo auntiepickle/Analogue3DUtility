@@ -304,7 +304,7 @@ def create_backup(target_root):
     for entry in os.listdir(target_root):
         entry_lower = entry.lower()
         entry_path = os.path.join(target_root, entry)
-        if os.path.isdir(entry_path) and entry_lower in {"library", "settings"}:
+        if os.path.isdir(entry_path) and entry_lower in {"library", "settings", "memories"}:
             folders_to_backup.append(entry)
     
     if not folders_to_backup:
@@ -366,7 +366,7 @@ def restore_backup(target_root):
 
     backup_path = os.path.join(backup_dir, selected_backup)
 
-    confirm = ask("\nWARNING: This will OVERWRITE all files in Library/Settings folders!\nType YES to continue (anything else cancels): ")
+    confirm = ask("\nWARNING: This will OVERWRITE files in the Library/Settings/Memories folders!\nType YES to continue (anything else cancels): ")
     if confirm != "YES":
         print("Restore cancelled.")
         return

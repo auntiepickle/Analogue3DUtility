@@ -36,8 +36,8 @@ terminals).
   and copies it to the SD card, cleaning up old `a3d_os_*.bin` files.
 - **Cartridge art packs** — install a community art pack (RetroGameCorps), a
   custom URL, or a `labels.db` you assembled yourself (e.g. via a3d-tools.online).
-- **Backup & restore** — zips up your `Library` and `Settings` folders, restores
-  them on demand, and cleans out old backups.
+- **Backup & restore** — zips up your `Library`, `Settings`, and `Memories`
+  (save states) folders, restores them on demand, and cleans out old backups.
 - **Controller-pak saves** — back up and restore your N64 save data
   (`controller_pak.img`) per game.
 - **8BitDo 64 controller flashing** — updates the Analogue 3D's controller over
