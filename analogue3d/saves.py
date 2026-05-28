@@ -17,6 +17,7 @@ import hashlib
 from datetime import datetime
 
 from .ui import bold, dim, green, yellow, red, ask
+from . import config
 
 PAK_SIZE = 32768
 PAGE_SIZE = 256
@@ -31,7 +32,7 @@ _ID_RE = re.compile(r"([0-9a-fA-F]{8})\s*$")
 
 
 def _backup_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "save_backups")
+    return config.backup_dir("save_backups")
 
 
 def used_pages(data):

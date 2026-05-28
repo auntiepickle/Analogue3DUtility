@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 import psutil
 
 from .ui import bold, dim, green, yellow, red, ask
-from . import ui
+from . import ui, config
 
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
@@ -321,8 +321,7 @@ def _zip_add_file(zipf, full_path, arcname):
 def create_backup(target_root):
     print("\n=== Creating Backup ===")
     
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    backup_dir = os.path.join(script_dir, "backups")
+    backup_dir = config.backup_dir("backups")
     os.makedirs(backup_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -365,8 +364,7 @@ def create_backup(target_root):
 def restore_backup(target_root):
     print("\n=== Restore Backup ===")
     
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    backup_dir = os.path.join(script_dir, "backups")
+    backup_dir = config.backup_dir("backups")
     
     if not os.path.exists(backup_dir) or not os.listdir(backup_dir):
         print("No backups found!")
@@ -409,8 +407,7 @@ def restore_backup(target_root):
 def clean_backups():
     print("\n=== Clean Backups ===")
     
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    backup_dir = os.path.join(script_dir, "backups")
+    backup_dir = config.backup_dir("backups")
     
     if not os.path.exists(backup_dir):
         print("No backups folder found (nothing to clean).")

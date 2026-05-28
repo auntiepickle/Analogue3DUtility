@@ -22,6 +22,8 @@ import shutil
 import zipfile
 from datetime import datetime
 
+from . import config
+
 MEM_SUBPATH = ("Memories", "N64")
 DEFAULT_KEEP = 20  # the console's per-game save-state cap
 
@@ -30,7 +32,7 @@ _TS_RE = re.compile(r"(\d{14})\.png$", re.IGNORECASE)
 
 
 def _backup_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "memory_backups")
+    return config.backup_dir("memory_backups")
 
 
 def memories_dir(sd_root):
