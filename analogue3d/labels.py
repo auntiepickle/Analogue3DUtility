@@ -62,7 +62,8 @@ def convert_to_z64(data):
 
 def compute_cart_id(rom_path):
     """Return the 8-hex Analogue 3D cart ID for a ROM file."""
-    data = open(rom_path, "rb").read(HASH_SIZE * 4)  # enough to normalize + hash
+    with open(rom_path, "rb") as f:
+        data = f.read(HASH_SIZE * 4)  # enough to normalize + hash
     z64 = convert_to_z64(data)
     crc = zlib.crc32(z64[:HASH_SIZE]) & 0xFFFFFFFF
     return f"{crc:08x}"

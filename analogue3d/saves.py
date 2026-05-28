@@ -61,7 +61,8 @@ def find_game_saves(sd_root):
         cart_id = m.group(1).lower() if m else "????????"
         name = folder[:m.start()].strip() if m else folder
         try:
-            data = open(pak, "rb").read()
+            with open(pak, "rb") as fh:
+                data = fh.read()
         except OSError:
             continue
         saves.append({
@@ -101,7 +102,8 @@ def list_backups():
 
 
 def restore_save(backup_path, dest_path):
-    data = open(backup_path, "rb").read()
+    with open(backup_path, "rb") as f:
+        data = f.read()
     if len(data) != PAK_SIZE:
         raise ValueError(f"backup is {len(data)} bytes, expected {PAK_SIZE}")
     shutil.copy2(backup_path, dest_path)

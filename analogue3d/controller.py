@@ -373,19 +373,18 @@ def update_to_latest(progress=None):
         return "skipped (controller not connected)"
     try:
         latest = fetch_firmware_list()[0]
-        header = parse_header(download_firmware(latest))
-    except (requests.RequestException, ControllerError, ValueError) as e:
-        return f"skipped (could not fetch firmware: {e})"
-    dev = EightBitDo64().open()
-    try:
-        current = dev.read_version()
-        if current >= header["version"]:
-            return f"already on {format_version(current)}"
-        flash(dev, header, progress=progress)
-    except ControllerError as e:
+        dev = EightBitDo64().open()
+        try:
+            current = dev.read_version()
+            if current >= latest["version_int"]:
+                return f"already on {format_version(current)}"
+            header = parse_header(download_firmware(latest))  # only download if behind
+            flash(dev, header, progress=progress)
+        finally:
+            dev.close()
+    except (ControllerError, OSError, ValueError, struct.error,
+            requests.RequestException) as e:
         return f"failed ({e})"
-    finally:
-        dev.close()
     new_ver = reopen_and_read_version()
     return f"updated to {format_version(new_ver)}" if new_ver else "flashed (verify pending)"
 

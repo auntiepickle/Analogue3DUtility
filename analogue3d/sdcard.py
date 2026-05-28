@@ -262,7 +262,7 @@ def install_firmware(target_root):
                 os.remove(old_path)
                 print(f"  Removed {entry}")
                 removed += 1
-            except:
+            except OSError:
                 pass
     if removed == 0:
         print("  No old firmware files found.")
@@ -421,7 +421,7 @@ def clean_backups():
         try:
             indices = [int(x.strip()) - 1 for x in choice.split(",") if x.strip()]
             to_delete = [backups[i] for i in indices if 0 <= i < len(backups)]
-        except:
+        except (ValueError, IndexError):
             print("Invalid input.")
             return
     
@@ -441,7 +441,7 @@ def clean_backups():
             os.remove(path)
             print(f"  Deleted {backup}")
             deleted += 1
-        except:
+        except OSError:
             print(f"  Failed to delete {backup}")
     
     print(f"\nClean complete! {deleted} backup(s) deleted.")

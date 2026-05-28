@@ -6,6 +6,8 @@ available, and a numbered fallback otherwise.
 
 import os
 
+import requests
+
 from . import sdcard, controller, labels, saves, ui
 
 
@@ -69,16 +71,22 @@ def _auto_all():
         ui.warn("Cancelled.")
         return
 
-    sdcard.create_backup(root)
-    sdcard.install_firmware(root)
-    sdcard.install_labels(root)
+    try:
+        sdcard.create_backup(root)
+        if not sdcard.install_firmware(root):
+            ui.warn("Firmware step didn't complete - check your connection.")
+        sdcard.install_labels(root)
+    except (requests.RequestException, OSError) as e:
+        ui.err(f"Auto update stopped during SD tasks: {e}")
+        return
+
     if controller_present:
         ui.info("Updating 8BitDo 64 controller...")
         status = controller.update_to_latest(progress=controller._progress)
         print()
-        ui.ok(f"Controller: {status}")
+        (ui.warn if status.startswith(("failed", "skipped")) else ui.ok)(f"Controller: {status}")
 
-    ui.ok("Auto update complete.")
+    ui.ok("SD tasks complete.")
     ui.info("Safely eject the card. For the firmware update: hold Pairing + Power on boot.")
 
 
