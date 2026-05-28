@@ -82,6 +82,7 @@ def gold(t):    return _c(t, "33")
 
 
 def glyph(unicode_char, ascii_fallback):
+    """Use a unicode glyph if the output encoding can represent it, else ASCII."""
     enc = getattr(sys.stdout, "encoding", None) or "ascii"
     try:
         unicode_char.encode(enc)
@@ -92,6 +93,7 @@ def glyph(unicode_char, ascii_fallback):
 
 DOT = glyph("●", "*")
 POINTER = glyph("▶", ">")
+QMARK = glyph("»", ">")   # prompt marker (replaces questionary's default "?")
 CHECK = glyph("✓", "[ok]")
 CROSS = glyph("✗", "[x]")
 
@@ -158,7 +160,7 @@ def select(message, options, default=None):
         try:
             return questionary.select(
                 message, choices=choices, style=_QSTYLE, pointer=POINTER,
-                qmark="?", instruction="(use arrow keys)", default=default,
+                qmark=QMARK, instruction="(use arrow keys)", default=default,
             ).ask()
         except (KeyboardInterrupt, EOFError):
             return None
@@ -181,7 +183,7 @@ def confirm(message, default=True):
     if interactive():
         try:
             return bool(questionary.confirm(message, default=default,
-                                            style=_QSTYLE, qmark="?").ask())
+                                            style=_QSTYLE, qmark=QMARK).ask())
         except (KeyboardInterrupt, EOFError):
             return False
     hint = "Y/n" if default else "y/N"
@@ -194,7 +196,7 @@ def confirm(message, default=True):
 def text(message):
     if interactive():
         try:
-            return (questionary.text(message, style=_QSTYLE, qmark="?").ask() or "").strip()
+            return (questionary.text(message, style=_QSTYLE, qmark=QMARK).ask() or "").strip()
         except (KeyboardInterrupt, EOFError):
             return ""
     return ask(message + " ")
