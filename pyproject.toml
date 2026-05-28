@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analogue3d"
+version = "0.5.3"
+description = "Engine + CLI for the Analogue 3D: console firmware, cartridge art packs, save backups, and 8BitDo 64 controller flashing."
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "MIT" }
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "psutil",
+    "hidapi",
+    "pillow",
+    "rich",
+    "questionary",
+]
+
+[project.urls]
+Homepage = "https://github.com/auntiepickle/Analogue3DUtility"
+
+[tool.setuptools]
+packages = ["analogue3d"]
