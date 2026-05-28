@@ -116,20 +116,24 @@ class EightBitDo64:
         self.dev = None
 
     @staticmethod
-    def find_path():
-        """Return the HID path of the 64's game-pad interface, or None."""
+    def find_all_paths():
+        """Return the HID path of every connected 64's game-pad interface."""
         if hid is None:
             raise ControllerError("The 'hidapi' package is not installed (pip install hidapi).")
-        candidates = hid.enumerate(VID, PID_APP)
-        if not candidates:
-            return None
-        for d in candidates:  # WebHID uses usage page 0x01 / usage 0x05 (game pad)
-            if d.get("usage_page") == 0x01 and d.get("usage") == 0x05:
-                return d["path"]
-        return candidates[0]["path"]
+        paths = [d["path"] for d in hid.enumerate(VID, PID_APP)
+                 if d.get("usage_page") == 0x01 and d.get("usage") == 0x05]
+        if not paths:  # fall back to any matching interface
+            paths = [d["path"] for d in hid.enumerate(VID, PID_APP)][:1]
+        return paths
 
-    def open(self):
-        path = self.find_path()
+    @staticmethod
+    def find_path():
+        """Return the HID path of the first 64's game-pad interface, or None."""
+        paths = EightBitDo64.find_all_paths()
+        return paths[0] if paths else None
+
+    def open(self, path=None):
+        path = path or self.find_path()
         if path is None:
             raise ControllerError(
                 "8BitDo 64 not found. Connect it by USB-C, power it on, and try again."
@@ -365,13 +369,38 @@ def is_connected():
 
 
 def connected_count():
-    """How many 8BitDo 64 controllers are plugged in (by game-pad interface).
-    8BitDo 64s all report the same generic serial, so multiples can't be told
-    apart in software - the flasher refuses to act when more than one is present."""
+    """How many 8BitDo 64 controllers are plugged in (by game-pad interface)."""
     if hid is None:
         return 0
     return sum(1 for d in hid.enumerate(VID, PID_APP)
                if d.get("usage_page") == 0x01 and d.get("usage") == 0x05)
+
+
+def _wait_until_ready(expected, timeout=90):
+    """After a flash reboots a controller, wait until `expected` controllers are
+    actually responsive (each opens and answers a version read) - not just
+    enumerated. This self-paces to whatever re-enumeration speed the machine/USB
+    needs instead of relying on a fixed settle sleep (which is fragile, since
+    every machine differs). Only a generous timeout caps the wait."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        paths = EightBitDo64.find_all_paths()
+        ready = 0
+        if len(paths) >= expected:
+            for p in paths:
+                d = EightBitDo64()
+                try:
+                    d.open(p)
+                    d.read_version()
+                    ready += 1
+                except (ControllerError, OSError, ValueError, struct.error):
+                    pass
+                finally:
+                    d.close()
+        if ready >= expected:
+            return True
+        time.sleep(1.0)
+    return False
 
 
 def update_to_latest(progress=None):
@@ -399,6 +428,86 @@ def update_to_latest(progress=None):
         return f"failed ({e})"
     new_ver = reopen_and_read_version()
     return f"updated to {format_version(new_ver)}" if new_ver else "flashed (verify pending)"
+
+
+def update_all(progress=None, announce=None):
+    """Flash EVERY connected 8BitDo 64 to the latest firmware. Works regardless of
+    count (they share a generic serial, so we can't tell them apart - instead we
+    repeatedly flash any controller still on an older version until none remain,
+    re-enumerating between flashes because each flash reboots its controller).
+    Returns a summary dict: {total, updated, already, failed, note?}."""
+    if hid is None:
+        return {"total": 0, "updated": 0, "already": 0, "failed": 0, "note": "hidapi not installed"}
+    total = connected_count()
+    if total == 0:
+        return {"total": 0, "updated": 0, "already": 0, "failed": 0, "note": "no controller connected"}
+    try:
+        latest = fetch_firmware_list()[0]
+    except (requests.RequestException, ControllerError, ValueError) as e:
+        return {"total": total, "updated": 0, "already": 0, "failed": 0, "note": f"firmware fetch failed: {e}"}
+    target = latest["version_int"]
+    header = None
+    updated = failed = 0
+
+    for _ in range(total + 3):  # cap so a stuck/failing unit can't loop forever
+        behind_path, current = None, None
+        for p in EightBitDo64.find_all_paths():
+            c = EightBitDo64()
+            try:
+                c.open(p)
+                v = c.read_version()
+            except (ControllerError, OSError, ValueError, struct.error):
+                v = None
+            finally:
+                c.close()
+            if v is not None and v < target:
+                behind_path, current = p, v
+                break
+        if behind_path is None:
+            break  # nothing left below the target
+
+        if header is None:
+            try:
+                header = parse_header(download_firmware(latest))
+            except (requests.RequestException, ControllerError, ValueError) as e:
+                return {"total": total, "updated": updated, "already": total - updated - failed,
+                        "failed": failed, "note": f"download failed: {e}"}
+        if announce:
+            announce(current, target)
+        c = EightBitDo64()
+        ok = False
+        try:
+            c.open(behind_path)
+            flash(c, header, progress=progress)
+            ok = True
+        except (ControllerError, OSError, ValueError, struct.error) as e:
+            failed += 1
+            note = f"a controller failed: {e}"
+        finally:
+            c.close()
+        if ok:
+            updated += 1
+            _wait_until_ready(total)  # wait for ALL controllers responsive before re-scanning
+        else:
+            return {"total": total, "updated": updated, "already": total - updated - failed,
+                    "failed": failed, "note": note}
+
+    return {"total": total, "updated": updated,
+            "already": max(total - updated - failed, 0), "failed": failed}
+
+
+def _run_update_all():
+    """Interactive wrapper around update_all(): progress + a summary line."""
+    def announce(cur, tgt):
+        print(f"\nUpdating a controller {format_version(cur)} -> {format_version(tgt)} (do not unplug)...")
+    summary = update_all(progress=_progress, announce=announce)
+    print()
+    if summary.get("note") and not summary.get("updated"):
+        print(f"  {summary['note']}")
+    parts = [f"{summary.get('updated', 0)} updated", f"{summary.get('already', 0)} already current"]
+    if summary.get("failed"):
+        parts.append(f"{summary['failed']} failed")
+    print("Done: " + ", ".join(parts) + ".")
 
 
 def _progress(written, total, block, nblocks):
@@ -441,9 +550,17 @@ def run_interactive():
     if hid is None:
         print("The 'hidapi' package is required. Run: pip install hidapi")
         return
-    if connected_count() > 1:
-        print("Multiple 8BitDo 64 controllers are connected, and they can't be told")
-        print("apart in software. Please connect ONLY the controller you want to flash.")
+    n = connected_count()
+    if n > 1:
+        print(f"\n{n} 8BitDo 64 controllers are connected.")
+        try:
+            ans = input(f"Update all {n} to the latest firmware? [Y/n]: ").strip().lower()
+        except EOFError:
+            ans = ""
+        if ans not in ("", "y", "yes"):
+            print("Cancelled. (Connect just one controller to pick a specific version.)")
+            return
+        _run_update_all()
         return
 
     try:
@@ -539,7 +656,7 @@ __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
     "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
     "parse_header", "flash", "reopen_and_read_version", "run_interactive",
-    "is_connected", "connected_count", "update_to_latest",
+    "is_connected", "connected_count", "update_to_latest", "update_all",
 ]
 
 

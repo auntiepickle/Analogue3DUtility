@@ -57,13 +57,15 @@ def _auto_all():
         ui.warn("Cancelled.")
         return
 
-    controller_present = controller.is_connected()
+    n_controllers = controller.connected_count()
     ui.info("This will, for every part that applies:")
     print(f"   {ui.DOT} Back up the SD card")
     print(f"   {ui.DOT} Update the console firmware")
     print(f"   {ui.DOT} Install the community cartridge art pack")
-    if controller_present:
+    if n_controllers == 1:
         print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.green("(detected)"))
+    elif n_controllers > 1:
+        print(f"   {ui.DOT} Update all {n_controllers} 8BitDo 64 controllers " + ui.green("(detected)"))
     else:
         print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.dim("(not detected - will skip)"))
 
@@ -80,11 +82,17 @@ def _auto_all():
         ui.err(f"Auto update stopped during SD tasks: {e}")
         return
 
-    if controller_present:
-        ui.info("Updating 8BitDo 64 controller...")
-        status = controller.update_to_latest(progress=controller._progress)
+    if n_controllers >= 1:
+        ui.info(f"Updating 8BitDo 64 controller{'s' if n_controllers > 1 else ''}...")
+        s = controller.update_all(progress=controller._progress)
         print()
-        (ui.warn if status.startswith(("failed", "skipped")) else ui.ok)(f"Controller: {status}")
+        if s.get("note") and not s.get("updated"):
+            ui.warn(f"Controller: {s['note']}")
+        else:
+            msg = f"Controllers: {s.get('updated', 0)} updated, {s.get('already', 0)} already current"
+            if s.get("failed"):
+                msg += f", {s['failed']} failed"
+            (ui.warn if s.get("failed") else ui.ok)(msg)
 
     ui.ok("SD tasks complete.")
     ui.info("Safely eject the card. For the firmware update: hold Pairing + Power on boot.")
