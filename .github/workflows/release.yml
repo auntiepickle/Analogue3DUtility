@@ -16,6 +16,10 @@ jobs:
   build:
     name: build (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
+    env:
+      # Set this repo secret (after SignPath Foundation approval) to enable
+      # Windows code signing; until then the signing step below is a no-op.
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,10 +64,34 @@ jobs:
           cp "dist/a3d${{ matrix.ext }}" "out/${{ matrix.asset }}"
 
       - name: Upload build artifact
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
           path: out/${{ matrix.asset }}
+
+      # Windows code signing via SignPath Foundation (free for OSS). Runs only on
+      # tags when SIGNPATH_API_TOKEN is set; otherwise skipped (unsigned build).
+      - name: Code sign (Windows, SignPath)
+        if: matrix.label == 'windows' && env.SIGNPATH_API_TOKEN != '' && startsWith(github.ref, 'refs/tags/')
+        uses: SignPath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ env.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: analogue-3d-utility
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Prefer the signed binary if signing ran
+        if: matrix.label == 'windows'
+        shell: bash
+        run: |
+          if [ -f "signed/${{ matrix.asset }}" ]; then
+            cp "signed/${{ matrix.asset }}" "out/${{ matrix.asset }}"
+            echo "Attaching signed binary."
+          fi
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')

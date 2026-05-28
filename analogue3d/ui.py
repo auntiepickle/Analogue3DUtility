@@ -92,10 +92,12 @@ def glyph(unicode_char, ascii_fallback):
 
 
 DOT = glyph("●", "*")
-POINTER = glyph("▶", ">")
-QMARK = glyph("»", ">")   # prompt marker (replaces questionary's default "?")
-CHECK = glyph("✓", "[ok]")
-CROSS = glyph("✗", "[x]")
+# Use guillemets for the menu arrows: widely present in fonts (unlike the
+# geometric triangle U+25B6, which renders as tofu in some console fonts).
+POINTER = glyph("»", ">")
+QMARK = glyph("»", ">")    # prompt marker (replaces questionary's default "?")
+CHECK = glyph("+", "+")    # ASCII - reliable across console fonts
+CROSS = glyph("x", "x")
 
 
 def ask(prompt):

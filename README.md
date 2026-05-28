@@ -57,6 +57,10 @@ Grab the latest from the
 SmartScreen may warn about the unsigned build: **More info → Run anyway**). You get
 the same arrow-key menu, no install required.
 
+Windows binaries are code-signed for free via the
+[SignPath Foundation](https://signpath.org/) open-source program (see
+[SIGNING.md](SIGNING.md)).
+
 ### Option B — run from source (for tinkerers)
 
 ```bash
