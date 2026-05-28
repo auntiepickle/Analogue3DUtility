@@ -154,7 +154,9 @@ validated on real hardware.
 This is an unofficial, community-built tool. It is **not affiliated with,
 endorsed by, or supported by Analogue, Inc. or 8BitDo** in any way. All firmware
 is downloaded from those vendors' own servers; this tool just automates fetching
-and flashing it.
+and flashing it. **If Analogue or 8BitDo have any concerns about this project,
+please [open an issue](https://github.com/auntiepickle/Analogue3DUtility/issues)
+and I'll address it promptly.**
 
 Flashing firmware to any device carries inherent risk. While the controller
 updater is designed to be safe and recoverable (it writes only the application
