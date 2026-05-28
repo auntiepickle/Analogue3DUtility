@@ -1,0 +1,72 @@
+name: release
+
+# Builds one-file binaries for Windows, macOS, and Linux and attaches them to
+# the GitHub Release whenever a version tag (vX.Y.Z) is pushed. Can also be run
+# manually (workflow_dispatch) to produce build artifacts without releasing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+            ext: ".exe"
+            asset: a3d-windows.exe
+          - os: macos-latest
+            label: macos
+            ext: ""
+            asset: a3d-macos
+          - os: ubuntu-latest
+            label: linux
+            ext: ""
+            asset: a3d-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build one-file binary
+        run: >
+          pyinstaller --onefile --name a3d
+          --collect-submodules analogue3d
+          --collect-all rich
+          --collect-all questionary
+          --hidden-import hid
+          a3d.py
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          cp "dist/a3d${{ matrix.ext }}" "out/${{ matrix.asset }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: out/${{ matrix.asset }}
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/${{ matrix.asset }}

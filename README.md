@@ -47,22 +47,26 @@ terminals).
 
 ---
 
-## Quick start
+## Get it
+
+### Option A — download a binary (no Python needed)
+
+Grab the latest from the
+[**Releases**](https://github.com/auntiepickle/Analogue3DUtility/releases) page:
+`a3d-windows.exe`, `a3d-macos`, or `a3d-linux`. Run it (on Windows, double-click —
+SmartScreen may warn about the unsigned build: **More info → Run anyway**). You get
+the same arrow-key menu, no install required.
+
+### Option B — run from source (for tinkerers)
 
 ```bash
-# 1. Get the code
 git clone https://github.com/auntiepickle/Analogue3DUtility.git
 cd Analogue3DUtility
-
-# 2. Run it (it installs its own dependencies the first time)
 python a3d.py
 ```
 
-Then pick what you want from the menu. That's it.
-
 On first launch the script checks for the packages it needs and offers to
-`pip install` them for you, so you don't have to install anything by hand. If you'd
-rather install them yourself up front, run `pip install -r requirements.txt`.
+`pip install` them for you. Prefer to do it yourself? `pip install -r requirements.txt`.
 
 ### Requirements
 

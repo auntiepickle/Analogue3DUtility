@@ -22,6 +22,9 @@ def _ensure_dependencies():
     """Detect missing packages and offer to pip-install them, so a user can just
     run the script. requests/bs4/psutil are required; hidapi (controller) and
     pillow (custom artwork) are optional."""
+    if getattr(sys, "frozen", False):
+        return  # packaged binary (PyInstaller) - dependencies are bundled in
+
     required = [("requests", "requests"), ("bs4", "beautifulsoup4"), ("psutil", "psutil")]
     optional = [("hid", "hidapi"), ("PIL", "pillow"),
                 ("rich", "rich"), ("questionary", "questionary")]

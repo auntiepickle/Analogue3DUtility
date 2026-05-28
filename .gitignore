@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 
+# PyInstaller build output
+build/
+dist/
+*.spec
+
 # Downloaded / generated artifacts (re-downloaded on demand)
 a3d_os_*.bin
 download
