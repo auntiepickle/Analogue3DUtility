@@ -1,0 +1,7 @@
+requests
+beautifulsoup4
+psutil
+hidapi
+pillow
+rich
+questionary

@@ -1,2 +1,16 @@
-a3d_os_01_01_09.bin
-backups/*
+# Python
+__pycache__/
+*.pyc
+
+# Downloaded / generated artifacts (re-downloaded on demand)
+a3d_os_*.bin
+download
+*.dat
+labels.db
+
+# Backups created by the tool
+backups/
+save_backups/
+
+# Local editor / Claude Code config
+.claude/
