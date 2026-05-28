@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-0.6.0-F4CD01?labelColor=0a0a0a" alt="Version 0.6.0">
   <img src="https://img.shields.io/badge/python-3.7%2B-F4CD01?labelColor=0a0a0a" alt="Python 3.7+">
   <img src="https://img.shields.io/badge/platforms-Windows%20·%20macOS%20·%20Linux-4ade80?labelColor=0a0a0a" alt="Platforms">
   <img src="https://img.shields.io/badge/UI-arrow--key%20terminal-F4CD01?labelColor=0a0a0a" alt="Arrow-key terminal UI">
@@ -42,10 +43,15 @@ terminals).
   (save states) folders, restores them on demand, and cleans out old backups.
 - **Controller-pak saves** — back up and restore your N64 save data
   (`controller_pak.img`) per game.
+- **Save states (Memories)** — manage the console's save states: take a per-game
+  **snapshot** of all of them, restore the whole snapshot or just one game, trim a
+  game down to its newest N, or delete old snapshots.
 - **8BitDo 64 controller flashing** — updates the Analogue 3D's controller over
   USB‑C **without** 8BitDo's Ultimate Software, a browser, or any driver swap.
   Pick a specific firmware version (including official downgrades), or update
   several connected controllers at once.
+- **Settings** — choose where backups are stored (defaults to your
+  `Documents/Analogue3D` folder).
 - **Advanced** — set one cartridge's art by ID/ROM, and clean old backups.
 
 ---
