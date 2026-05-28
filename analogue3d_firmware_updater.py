@@ -18,6 +18,8 @@ import psutil
 from urllib.parse import urljoin
 from datetime import datetime
 
+import eightbitdo_64_updater
+
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
 LABELS_DB_FILENAME = "labels.db"
@@ -370,20 +372,23 @@ def main():
         print("4) Create Backup (Library + Settings)")
         print("5) Restore Backup")
         print("6) Clean Backups (delete old backups)")
+        print("7) Update 8BitDo 64 Controller firmware (USB-C)")
         print("0) Quit")
-        
-        choice = input("\nEnter choice (0-6): ").strip()
-        
-        if choice not in ["0","1","2","3","4","5","6"]:
+
+        choice = input("\nEnter choice (0-7): ").strip()
+
+        if choice not in ["0","1","2","3","4","5","6","7"]:
             print("Invalid choice, try again.\n")
             continue
-        
+
         if choice == "0":
             print("Goodbye! Enjoy your perfectly maintained Analogue 3D 🚀")
             sys.exit(0)
-        
+
         if choice == "6":
             clean_backups()
+        elif choice == "7":
+            eightbitdo_64_updater.run_interactive()
         else:
             # All other options need the SD card
             target_root = select_sd_card()
@@ -417,7 +422,8 @@ if __name__ == "__main__":
         import requests, bs4, psutil
     except ImportError:
         print("Missing required packages!")
-        print("Run: pip install requests beautifulsoup4 psutil")
+        print("Run: pip install requests beautifulsoup4 psutil hidapi")
+        print("(hidapi is only needed for option 7, the 8BitDo 64 controller update.)")
         sys.exit(1)
     
     main()
