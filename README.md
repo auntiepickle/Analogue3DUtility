@@ -15,7 +15,7 @@ Think of it as the spiritual successor to PocketSync, but for the Analogue 3D
 > **If you have Python, just run it** — the script installs anything it needs and
 > drops you into a menu:
 > ```bash
-> python analogue3d_firmware_updater.py
+> python a3d.py
 > ```
 > It auto-detects your Analogue 3D SD card and walks you through the rest.
 
@@ -43,7 +43,7 @@ git clone https://github.com/auntiepickle/Analogue3DUtility.git
 cd Analogue3DUtility
 
 # 2. Run it (it installs its own dependencies the first time)
-python analogue3d_firmware_updater.py
+python a3d.py
 ```
 
 Then pick what you want from the menu. That's it.
@@ -93,7 +93,7 @@ are flagged with a warning since they're less common than updates.
 This tool is verified against firmware **up to v2.04**. When 8BitDo publishes
 something newer, the tool will still list it but tag it **`untested`** and warn
 before flashing it. The maintainer bumps the tested ceiling
-(`MAX_TESTED_VERSION` in `eightbitdo_64_updater.py`) as each new release is
+(`MAX_TESTED_VERSION` in `controller.py`) as each new release is
 validated on real hardware.
 
 ---

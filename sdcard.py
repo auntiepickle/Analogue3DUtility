@@ -1,10 +1,5 @@
-#!/usr/bin/env python3
-
-"""
-Analogue 3D Updater – Firmware + Labels + Backup/Restore + Clean Backups
-The FINAL complete one-stop tool for your Analogue 3D (December 2025+)
-Now with backup cleaning – keep your backups folder tidy!
-"""
+"""Analogue 3D SD-card operations: drive detection, console firmware updates,
+cartridge labels, and Library/Settings backup/restore/clean."""
 
 import os
 import re
@@ -12,126 +7,20 @@ import sys
 import shutil
 import zipfile
 import ctypes
-import subprocess
 from urllib.parse import urljoin
 from datetime import datetime
-
-
-def _ensure_dependencies():
-    """Make this runnable with nothing but Python installed: detect any missing
-    packages and offer to pip-install them automatically, so a user can just run
-    the script. requests/bs4/psutil are required; hidapi is optional (controller)."""
-    required = [("requests", "requests"), ("bs4", "beautifulsoup4"), ("psutil", "psutil")]
-    optional = [("hid", "hidapi")]
-
-    def missing(items):
-        out = []
-        for mod, pkg in items:
-            try:
-                __import__(mod)
-            except ImportError:
-                out.append(pkg)
-        return out
-
-    miss_req, miss_opt = missing(required), missing(optional)
-    if not miss_req and not miss_opt:
-        return
-
-    print("This tool needs a few Python packages that aren't installed yet:")
-    print("   " + ", ".join(miss_req + miss_opt))
-    try:
-        answer = input("Install them now with pip? [Y/n]: ").strip().lower()
-    except EOFError:
-        answer = "y"
-    if answer not in ("", "y", "yes"):
-        if miss_req:
-            print("Can't continue without: " + ", ".join(miss_req))
-            print("Install manually:  pip install " + " ".join(miss_req))
-            sys.exit(1)
-        return
-
-    def pip_install(pkgs):
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", *pkgs])
-            return True
-        except (subprocess.CalledProcessError, OSError):
-            return False
-
-    if miss_req and not pip_install(miss_req):
-        print("Auto-install failed. Please run:  pip install " + " ".join(miss_req))
-        sys.exit(1)
-    if miss_opt and not pip_install(miss_opt):
-        print("Note: couldn't install " + ", ".join(miss_opt) +
-              " (only needed for the controller updater) - continuing without it.")
-    if missing(required):
-        print("Packages still missing. Please run:  pip install " + " ".join(miss_req))
-        sys.exit(1)
-
-
-_ensure_dependencies()
 
 import requests
 from bs4 import BeautifulSoup
 import psutil
+
+from ui import bold, dim, green, yellow, red, ask
 
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
 LABELS_DB_FILENAME = "labels.db"
 ANALOGUE_VOLUME_LABEL = "ANALOGUE 3D"
 
-
-# --- terminal niceties ---------------------------------------------------
-def _enable_color():
-    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
-        return False
-    if os.name == "nt":
-        try:
-            k = ctypes.windll.kernel32
-            h = k.GetStdHandle(-11)
-            mode = ctypes.c_uint32()
-            k.GetConsoleMode(h, ctypes.byref(mode))
-            k.SetConsoleMode(h, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        except Exception:
-            return False
-    return True
-
-
-_COLOR = _enable_color()
-
-
-def _c(text, code):
-    return f"\033[{code}m{text}\033[0m" if _COLOR else text
-
-
-def bold(t):    return _c(t, "1")
-def dim(t):     return _c(t, "2")
-def cyan(t):    return _c(t, "96")
-def green(t):   return _c(t, "92")
-def yellow(t):  return _c(t, "93")
-def red(t):     return _c(t, "91")
-def magenta(t): return _c(t, "95")
-def gold(t):    return _c(t, "33")
-
-
-def _glyph(unicode_char, ascii_fallback):
-    """Use a pretty unicode glyph only if the terminal encoding can render it."""
-    enc = getattr(sys.stdout, "encoding", None) or "ascii"
-    try:
-        unicode_char.encode(enc)
-        return unicode_char
-    except (UnicodeEncodeError, LookupError):
-        return ascii_fallback
-
-
-DOT = _glyph("●", "*")   # filled dot for status lines
-
-
-def _ask(prompt):
-    """input() that treats no-input/EOF as an empty (cancel-friendly) answer."""
-    try:
-        return input(prompt).strip()
-    except EOFError:
-        return ""
 
 def get_latest_firmware_url():
     print("Fetching latest firmware info from Analogue...")
@@ -271,7 +160,7 @@ def _validate_root(path):
 
 
 def _manual_path():
-    path = _ask(r"Enter full path to SD card root (blank/q to cancel): ")
+    path = ask(r"Enter full path to SD card root (blank/q to cancel): ")
     if path == "" or path.lower() in ("q", "quit"):
         return None
     return _validate_root(path)
@@ -290,7 +179,7 @@ def select_sd_card():
         detail = f"{d['free_gb']} GB free - matched: {', '.join(d['reasons'])}"
         print(green("Found your Analogue 3D card: ") + bold(d["path"]) + label_str +
               " " + dim(f"({detail})"))
-        confirm = _ask("Use this drive? [Y/n] (q to cancel): ").lower()
+        confirm = ask("Use this drive? [Y/n] (q to cancel): ").lower()
         if confirm in ("", "y", "yes"):
             return _validate_root(d["path"])
         if confirm in ("q", "quit"):
@@ -315,7 +204,7 @@ def select_sd_card():
     print(f"  {bold('q')})  Cancel (back to menu)")
 
     default_hint = " " + dim("[Enter = 1]") if strong else ""
-    choice = _ask(f"\nSelect your SD card{default_hint}: ").lower()
+    choice = ask(f"\nSelect your SD card{default_hint}: ").lower()
     if choice in ("q", "quit"):
         return None
     if choice == "" and strong:
@@ -434,7 +323,7 @@ def restore_backup(target_root):
         print(f"  {bold(str(i+1))})  {backup} ({size_mb} MB)")
     print(f"  {bold('0')})  Cancel (back to menu)")
 
-    choice = _ask("\nSelect backup to restore (0 to cancel): ")
+    choice = ask("\nSelect backup to restore (0 to cancel): ")
     if choice in ("", "0", "q", "quit"):
         print("Cancelled.")
         return
@@ -446,7 +335,7 @@ def restore_backup(target_root):
 
     backup_path = os.path.join(backup_dir, selected_backup)
 
-    confirm = _ask("\nWARNING: This will OVERWRITE all files in Library/Settings folders!\nType YES to continue (anything else cancels): ")
+    confirm = ask("\nWARNING: This will OVERWRITE all files in Library/Settings folders!\nType YES to continue (anything else cancels): ")
     if confirm != "YES":
         print("Restore cancelled.")
         return
@@ -525,83 +414,3 @@ def clean_backups():
             print(f"  Failed to delete {backup}")
     
     print(f"\nClean complete! {deleted} backup(s) deleted.")
-
-def _sd_status_line():
-    try:
-        strong = [d for d in get_potential_sd_cards() if d["score"] >= 4]
-    except Exception:
-        strong = []
-    if len(strong) == 1:
-        d = strong[0]
-        label = f" [{d['label']}]" if d["label"] else ""
-        return green(f"  {DOT} SD card: ") + bold(d["path"]) + dim(label)
-    if strong:
-        return yellow(f"  {DOT} SD card: multiple Analogue 3D cards detected")
-    return dim(f"  {DOT} SD card: not detected (you can still enter a path manually)")
-
-
-def main():
-    title = "  ANALOGUE 3D UTILITY  "
-    bar = "+" + "-" * len(title) + "+"
-    print()
-    print(gold(bar))
-    print(gold("|") + bold(gold(title)) + gold("|"))
-    print(gold(bar))
-
-    while True:
-        print()
-        print(_sd_status_line())
-        print()
-        print(bold("  SD CARD"))
-        print(f"    {cyan('1')}  Install everything (firmware + labels)")
-        print(f"    {cyan('2')}  Install labels only")
-        print(f"    {cyan('3')}  Update firmware only")
-        print(f"    {cyan('4')}  Create backup")
-        print(f"    {cyan('5')}  Restore backup")
-        print(f"    {cyan('6')}  Clean backups")
-        print(bold("  CONTROLLER"))
-        print(f"    {magenta('7')}  Update 8BitDo 64 controller (USB-C)")
-        print()
-        print(f"    {dim('0')}  Quit")
-
-        choice = _ask("\n" + bold("Choose an option: ")).lower()
-
-        if choice in ("0", "q", "quit"):
-            print(green("\nDone. Enjoy your Analogue 3D."))
-            return
-        if choice not in ("1", "2", "3", "4", "5", "6", "7"):
-            print(yellow("Please enter a number from the menu."))
-            continue
-
-        if choice == "6":
-            clean_backups()
-        elif choice == "7":
-            import eightbitdo_64_updater
-            eightbitdo_64_updater.run_interactive()
-        else:
-            target_root = select_sd_card()
-            if target_root is None:
-                print(dim("Cancelled - back to menu."))
-                print("\n" + dim("-" * 60))
-                continue
-
-            if choice in ("1", "2", "3"):
-                if choice in ("1", "3"):
-                    install_firmware(target_root)
-                if choice in ("1", "2"):
-                    install_labels(target_root)
-                print(green("\nUpdate tasks completed!"))
-                if choice in ("1", "3"):
-                    print(dim("For the firmware update: hold Pairing + Power on boot."))
-            elif choice == "4":
-                create_backup(target_root)
-            elif choice == "5":
-                restore_backup(target_root)
-
-            print(dim("\nSafely eject your SD card when ready."))
-
-        print("\n" + dim("-" * 60))
-
-
-if __name__ == "__main__":
-    main()
