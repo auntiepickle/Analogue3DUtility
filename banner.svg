@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 260" width="800" height="260" role="img" aria-label="Analogue 3D Utility">
+  <title>Analogue 3D Utility</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241047"/>
+      <stop offset="0.55" stop-color="#160a2e"/>
+      <stop offset="1" stop-color="#0b0418"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe14d"/>
+      <stop offset="0.5" stop-color="#ff7a3c"/>
+      <stop offset="1" stop-color="#ff2e88"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7df9ff"/>
+      <stop offset="1" stop-color="#ff4fa3"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="above"><rect x="0" y="0" width="800" height="168"/></clipPath>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="800" height="260" fill="url(#sky)"/>
+
+  <!-- retro sun with scanline cuts, clipped to the sky -->
+  <g clip-path="url(#above)">
+    <circle cx="400" cy="170" r="78" fill="url(#sun)"/>
+    <g fill="#160a2e">
+      <rect x="318" y="150" width="164" height="3"/>
+      <rect x="318" y="156" width="164" height="4"/>
+      <rect x="318" y="163" width="164" height="5"/>
+    </g>
+  </g>
+
+  <!-- perspective grid floor -->
+  <g opacity="0.7">
+    <line x1="0" y1="168" x2="800" y2="168" stroke="#7df9ff" stroke-width="2"/>
+    <g stroke="#ff2e88" stroke-width="1.1" opacity="0.8">
+      <line x1="400" y1="168" x2="40"  y2="260"/>
+      <line x1="400" y1="168" x2="140" y2="260"/>
+      <line x1="400" y1="168" x2="250" y2="260"/>
+      <line x1="400" y1="168" x2="340" y2="260"/>
+      <line x1="400" y1="168" x2="400" y2="260"/>
+      <line x1="400" y1="168" x2="460" y2="260"/>
+      <line x1="400" y1="168" x2="550" y2="260"/>
+      <line x1="400" y1="168" x2="660" y2="260"/>
+      <line x1="400" y1="168" x2="760" y2="260"/>
+      <line x1="0" y1="178" x2="800" y2="178"/>
+      <line x1="0" y1="192" x2="800" y2="192"/>
+      <line x1="0" y1="211" x2="800" y2="211"/>
+      <line x1="0" y1="234" x2="800" y2="234"/>
+      <line x1="0" y1="260" x2="800" y2="260"/>
+    </g>
+  </g>
+
+  <!-- left motif: retro face-button diamond (generic 4-colour cluster) -->
+  <g transform="translate(96,84)" filter="url(#glow)">
+    <circle cx="0"   cy="-22" r="11" fill="#ffe14d"/>
+    <circle cx="22"  cy="0"   r="11" fill="#ff3b5b"/>
+    <circle cx="0"   cy="22"  r="11" fill="#3ad17a"/>
+    <circle cx="-22" cy="0"   r="11" fill="#4aa8ff"/>
+  </g>
+
+  <!-- right motif: wireframe isometric cube (the "3D") -->
+  <g transform="translate(704,84)" fill="none" stroke="#7df9ff" stroke-width="2.2"
+     stroke-linejoin="round" filter="url(#glow)">
+    <path d="M0,-34 L34,-16 L34,22 L0,40 L-34,22 L-34,-16 Z"/>
+    <path d="M0,-34 L0,4 M0,4 L34,22 M0,4 L-34,22"/>
+    <path d="M0,4 L0,40" opacity="0.5"/>
+  </g>
+
+  <!-- title -->
+  <g text-anchor="middle" font-family="Verdana, Geneva, 'DejaVu Sans', sans-serif">
+    <text x="400" y="92" font-size="54" font-weight="800" letter-spacing="5"
+          fill="url(#title)" filter="url(#glow)">ANALOGUE 3D</text>
+    <text x="400" y="120" font-size="14.5" font-weight="700" letter-spacing="5"
+          fill="#7df9ff">UTILITY &#183; 8BITDO 64 CONTROLLER FLASHER</text>
+  </g>
+</svg>

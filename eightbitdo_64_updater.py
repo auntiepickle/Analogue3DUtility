@@ -54,6 +54,12 @@ except ImportError:  # pragma: no cover - surfaced to the user by the caller
 VID = 0x2DC8
 PID_APP = 0x3019
 FIRMWARE_TYPE = 78
+
+# The newest firmware release this tool's flash path has actually been verified
+# against (encoded as major*100 + minor, so 204 == v2.04). Anything newer that
+# 8BitDo publishes is flagged as "untested" until a maintainer validates it and
+# bumps this value. See the "Supported firmware" section of the README.
+MAX_TESTED_VERSION = 204  # v2.04
 FIRMWARE_API = "http://dl.8bitdo.com:8080/firmware/select"
 FIRMWARE_API_BASE = "http://dl.8bitdo.com:8080"
 
@@ -240,17 +246,26 @@ class EightBitDo64:
 
 
 # --- firmware acquisition ------------------------------------------------
-def fetch_firmware_meta(beta=False):
+def fetch_firmware_list(beta=False):
+    """Return every available firmware release for the 64 (Type 78), newest
+    first. Each entry gets a `version_int` (e.g. 204 for 2.04) added."""
     headers = {"Type": str(FIRMWARE_TYPE)}
     if beta:
         headers["Beta"] = "1"
     resp = requests.post(FIRMWARE_API, headers=headers, timeout=20)
     resp.raise_for_status()
-    data = resp.json()
-    lst = data.get("list") or []
+    lst = resp.json().get("list") or []
     if not lst:
         raise ControllerError("8BitDo API returned no firmware for the 64 (Type 78).")
-    return lst[0]
+    for e in lst:
+        e["version_int"] = round(float(e["version"]) * 100)
+    lst.sort(key=lambda e: e["version_int"], reverse=True)
+    return lst
+
+
+def fetch_firmware_meta(beta=False):
+    """The latest release (kept for convenience / callers that want newest)."""
+    return fetch_firmware_list(beta)[0]
 
 
 def download_firmware(meta):
@@ -345,20 +360,39 @@ def _progress(written, total, block, nblocks):
     print(f"\r  flashing [{bar}] {pct:3d}%  block {block}/{nblocks}", end="", flush=True)
 
 
+def _select_version(versions, current):
+    """Show the available releases and let the user pick one (default: latest)."""
+    print("\nAvailable firmware (newest first):")
+    for i, e in enumerate(versions, 1):
+        tags = []
+        if i == 1:
+            tags.append("latest")
+        if e["version_int"] == current:
+            tags.append("installed")
+        if e["version_int"] > MAX_TESTED_VERSION:
+            tags.append("untested")
+        suffix = "   <- " + ", ".join(tags) if tags else ""
+        print(f"  {i}) {format_version(e['version_int'])}{suffix}")
+    raw = input("\nSelect a version to flash [Enter = latest, 0 = cancel]: ").strip()
+    if raw == "":
+        return versions[0]
+    if raw == "0":
+        return None
+    try:
+        idx = int(raw) - 1
+    except ValueError:
+        idx = -1
+    if 0 <= idx < len(versions):
+        return versions[idx]
+    print("Invalid selection.")
+    return None
+
+
 def run_interactive():
-    """Menu-callable entry point: detect, compare versions, confirm, flash."""
+    """Menu-callable entry point: detect, pick a version, confirm, flash, verify."""
     print("\n=== Update 8BitDo 64 Controller Firmware ===")
     if hid is None:
         print("The 'hidapi' package is required. Run: pip install hidapi")
-        return
-
-    try:
-        meta = fetch_firmware_meta()
-        latest_float = float(meta["version"])
-        blob = download_firmware(meta)
-        header = parse_header(blob)
-    except (requests.RequestException, ControllerError, ValueError) as e:
-        print(f"Could not fetch/verify firmware: {e}")
         return
 
     try:
@@ -368,6 +402,7 @@ def run_interactive():
         print("Tip: connect the 8BitDo 64 with a USB-C *data* cable and power it on.")
         return
 
+    expected = None
     try:
         try:
             current = dev.read_version()
@@ -375,22 +410,53 @@ def run_interactive():
         except ControllerError as e:
             print(f"Could not read the controller: {e}")
             return
+        print(f"Controller detected (pid 0x{pid:04x}). "
+              f"Current firmware: {format_version(current)}")
 
-        print(f"Controller detected (pid 0x{pid:04x}).")
-        print(f"  Current firmware: {format_version(current)}")
-        print(f"  Latest available: {format_version(header['version'])}  ({latest_float})")
+        try:
+            versions = fetch_firmware_list()
+        except (requests.RequestException, ControllerError, ValueError) as e:
+            print(f"Could not fetch the firmware list: {e}")
+            return
 
-        if current >= header["version"]:
-            print("Already up to date.")
-            again = input("Re-flash anyway? [y/N]: ").strip().lower()
-            if again not in ("y", "yes"):
-                return
+        latest = versions[0]["version_int"]
+        print(f"This tool is tested up to firmware {format_version(MAX_TESTED_VERSION)}.")
+        if latest > MAX_TESTED_VERSION:
+            print(f"Heads up: 8BitDo has published {format_version(latest)}, which is newer "
+                  f"than that.\nYou can flash it, but it hasn't been verified with this tool yet.")
 
-        print("\nFlashing is differential: only changed 4KB blocks are written, each")
-        print("verified by CRC. The controller stays in its bootloader if interrupted,")
-        print("so a failed flash is recoverable by simply running this again.")
-        print("Do NOT unplug the controller while flashing.")
-        confirm = input(f"\nFlash firmware {format_version(header['version'])} now? Type YES to continue: ").strip()
+        sel = _select_version(versions, current)
+        if sel is None:
+            print("Cancelled.")
+            return
+        target = sel["version_int"]
+
+        try:
+            blob = download_firmware(sel)
+            header = parse_header(blob)
+        except (requests.RequestException, ControllerError, ValueError) as e:
+            print(f"Could not download/verify firmware {format_version(target)}: {e}")
+            return
+        expected = header["version"]
+
+        if target == current:
+            action = f"re-flash the same version ({format_version(target)})"
+        elif target < current:
+            action = f"DOWNGRADE {format_version(current)} -> {format_version(target)}"
+        else:
+            action = f"update {format_version(current)} -> {format_version(target)}"
+
+        print("\nFlashing writes the firmware in CRC-checked blocks. The controller")
+        print("stays in its bootloader if interrupted, so a failed flash is recoverable")
+        print("by simply running this again. Do NOT unplug the controller while flashing.")
+        if target < current:
+            print("NOTE: this is a downgrade to an older official firmware - supported by")
+            print("8BitDo's own updater, but less common than a normal update.")
+        if target > MAX_TESTED_VERSION:
+            print(f"WARNING: {format_version(target)} is NEWER than the version this tool has")
+            print(f"been tested with ({format_version(MAX_TESTED_VERSION)}). It may work, but is "
+                  f"not officially supported.")
+        confirm = input(f"\nProceed to {action}? Type YES to continue: ").strip()
         if confirm != "YES":
             print("Cancelled.")
             return
@@ -406,7 +472,6 @@ def run_interactive():
     finally:
         dev.close()
 
-    expected = header["version"]
     print("Controller is rebooting; verifying new firmware...")
     new_ver = reopen_and_read_version()
     if new_ver == expected:
@@ -421,8 +486,8 @@ def run_interactive():
 
 __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
-    "fetch_firmware_meta", "download_firmware", "parse_header",
-    "flash", "reopen_and_read_version", "run_interactive",
+    "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
+    "parse_header", "flash", "reopen_and_read_version", "run_interactive",
 ]
 
 

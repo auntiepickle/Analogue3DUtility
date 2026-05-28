@@ -1,37 +1,119 @@
-# Analogue 3D Firmware Updater
+<p align="center">
+  <img src="banner.svg" width="100%" alt="Analogue 3D Utility">
+</p>
 
-A dead-simple, cross-platform Python script that automatically downloads the **latest** Analogue 3D firmware from the official site and copies it to your SD card — while cleaning up any old firmware files.
+# Analogue 3D Utility
 
-Think of it as the spiritual successor to PocketSync… but for the Analogue 3D (until someone makes a proper GUI).
+A no-nonsense, cross-platform Python tool for keeping your **Analogue 3D** (and its
+**8BitDo 64** controller) up to date — firmware, cartridge labels, backups, and
+controller flashing — all from one terminal menu.
+
+Think of it as the spiritual successor to PocketSync, but for the Analogue 3D
+(until someone makes a proper GUI).
+
+---
 
 ## Features
 
-- Always grabs the absolute latest firmware directly from `https://www.analogue.co/support/3d/firmware/latest`
-- Detects removable drives / SD cards automatically (Windows, macOS, Linux)
-- Lets you pick the correct drive or enter the path manually
-- Copies the new `.bin` file to the root of the card
-- Deletes any previous `a3d_os_*.bin` files (Analogue recommends only one firmware file present)
-- No dependencies beyond standard Python packages + three tiny pip installs
+- **Console firmware** — always grabs the latest Analogue 3D firmware from
+  `analogue.co` and copies it to your SD card, cleaning up old `a3d_os_*.bin` files.
+- **Cartridge labels** — installs/updates the community label database so your
+  carts show their box art.
+- **Backup & restore** — zips up your `Library` and `Settings` folders, restores
+  them on demand, and cleans out old backups.
+- **8BitDo 64 controller flashing** — updates the Analogue 3D's controller over
+  USB‑C **without** 8BitDo's Ultimate Software, a browser, or any driver swap.
+  Supports picking a specific firmware version (including official downgrades).
 
-## 8BitDo 64 Controller updater (menu option 7)
+---
 
-Updates the **8BitDo 64 Bluetooth Controller** (the Analogue 3D pad) over its
-USB-C cable — no 8BitDo Ultimate Software, no browser, no Windows driver swap.
-
-- Downloads the latest controller firmware straight from 8BitDo's API
-  (`dl.8bitdo.com`, firmware "Type 78")
-- Talks the controller's HID flashing protocol directly (reverse-engineered
-  from 8BitDo's WebHID updater and verified live against a real 8BitDo 64)
-- Differential flash: only the 4KB blocks that actually changed are written,
-  each verified by CRC. If interrupted, just run it again — the controller's
-  bootloader stays intact, so it's recoverable.
-
-Usage: connect the controller with a USB-C **data** cable, power it on, run the
-tool, and pick option 7. Requires the extra `hidapi` package (see below).
-
-## Requirements
-
-Python 3.7+ and the following packages:
+## Quick start
 
 ```bash
-pip install requests beautifulsoup4 psutil hidapi
+# 1. Get the code
+git clone https://github.com/auntiepickle/Analogue3DUtility.git
+cd Analogue3DUtility
+
+# 2. (Recommended) use a virtual environment
+python -m venv .venv
+# Windows:        .venv\Scripts\activate
+# macOS / Linux:  source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Run it
+python analogue3d_firmware_updater.py
+```
+
+Then pick what you want from the menu. That's it.
+
+> **Don't want a virtual environment?** You can just run
+> `pip install -r requirements.txt` against your system Python and skip step 2 —
+> the venv simply keeps these packages from mixing with everything else.
+
+### Requirements
+
+- Python 3.7+
+- The packages in [`requirements.txt`](requirements.txt): `requests`,
+  `beautifulsoup4`, `psutil`, and `hidapi`.
+- `hidapi` is only needed for the controller updater (option 7); everything else
+  works without it.
+
+---
+
+## Updating the Analogue 3D (SD card)
+
+Pop the console's SD card into your computer and run the tool. Options 1–5 cover
+firmware, labels, backups, and restores. The tool auto-detects removable drives
+and will auto-pick a card labelled **ANALOGUE 3D** when it finds one. After a
+firmware update, eject the card, put it back in the console, and follow Analogue's
+on-screen update prompt.
+
+---
+
+## Updating the 8BitDo 64 controller (option 7)
+
+1. Connect the controller to your computer with a USB‑C **data** cable.
+2. Power it on.
+3. Run the tool and choose **option 7**.
+4. Pick a firmware version (press Enter for the latest) and confirm.
+
+The tool talks the controller's own HID flashing protocol directly — the same one
+8BitDo's web updater uses — so there's nothing extra to install. It downloads the
+official firmware straight from 8BitDo, writes it in CRC‑checked blocks, and then
+reboots the controller and re-reads the version to confirm success.
+
+**Downgrades are supported.** 8BitDo's own updater lets you choose older official
+releases, and so does this tool — handy if a new release misbehaves. Downgrades
+are flagged with a warning since they're less common than updates.
+
+### Supported firmware
+
+This tool is verified against firmware **up to v2.04**. When 8BitDo publishes
+something newer, the tool will still list it but tag it **`untested`** and warn
+before flashing it. The maintainer bumps the tested ceiling
+(`MAX_TESTED_VERSION` in `eightbitdo_64_updater.py`) as each new release is
+validated on real hardware.
+
+---
+
+## ⚠️ Disclaimer — use at your own risk
+
+This is an unofficial, community-built tool. It is **not affiliated with,
+endorsed by, or supported by Analogue, Inc. or 8BitDo** in any way. All firmware
+is downloaded from those vendors' own servers; this tool just automates fetching
+and flashing it.
+
+Flashing firmware to any device carries inherent risk. While the controller
+updater is designed to be safe and recoverable (it writes only the application
+region, verifies each block, and leaves the bootloader intact so a failed flash
+can be retried), **no guarantee of any kind is made.**
+
+**THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED.** By using this tool you accept full responsibility for any outcome,
+including but not limited to data loss or a bricked/damaged device. The authors
+and contributors are **not liable** for any damage. If you are unsure, use the
+official Analogue and 8BitDo tools instead.
+
+Do not unplug the controller or remove the SD card while a write is in progress.
