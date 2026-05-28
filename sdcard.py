@@ -21,6 +21,30 @@ LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/l
 LABELS_DB_FILENAME = "labels.db"
 ANALOGUE_VOLUME_LABEL = "ANALOGUE 3D"
 
+# Known community label-database sources. Add more (name, url) as they appear.
+LABEL_SOURCES = [
+    ("RetroGameCorps community labels (default)", LABELS_DB_URL),
+]
+
+
+def choose_label_source():
+    """Let the user pick a label-DB source (or paste a URL). Returns a URL."""
+    print("\nLabel database source:")
+    for i, (name, _) in enumerate(LABEL_SOURCES, 1):
+        print(f"  {bold(str(i))})  {name}")
+    print(f"  {bold('u')})  Use a custom URL")
+    choice = ask("\nChoose [Enter = default]: ").lower()
+    if choice == "" or choice == "1":
+        return LABEL_SOURCES[0][1]
+    if choice == "u":
+        url = ask("Enter the labels.db URL: ").strip()
+        return url or None
+    try:
+        return LABEL_SOURCES[int(choice) - 1][1]
+    except (ValueError, IndexError):
+        print(red("Invalid choice; using the default source."))
+        return LABEL_SOURCES[0][1]
+
 
 def get_latest_firmware_url():
     print("Fetching latest firmware info from Analogue...")
@@ -245,18 +269,18 @@ def install_firmware(target_root):
     
     return True
 
-def install_labels(target_root):
+def install_labels(target_root, source_url=None):
     print("\n=== Installing/Updating Cartridge Labels ===")
-    local_labels_path = download_file(LABELS_DB_URL, dest_folder=".")
-    
+    local_labels_path = download_file(source_url or LABELS_DB_URL, dest_folder=".")
+
     labels_dir = os.path.join(target_root, "Library", "N64", "Images")
     os.makedirs(labels_dir, exist_ok=True)
-    
+
     dest_path = os.path.join(labels_dir, LABELS_DB_FILENAME)
     print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
     shutil.copy(local_labels_path, dest_path)
-    
-    print("Cartridge labels updated → beautiful cartridge art will now show!")
+
+    print(green("Cartridge labels updated - your cart art will now show."))
 
 def create_backup(target_root):
     print("\n=== Creating Backup ===")

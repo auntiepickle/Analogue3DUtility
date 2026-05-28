@@ -19,7 +19,7 @@ def _ensure_dependencies():
     packages and offer to pip-install them, so a user can just run the script.
     requests/bs4/psutil are required; hidapi is optional (controller updater)."""
     required = [("requests", "requests"), ("bs4", "beautifulsoup4"), ("psutil", "psutil")]
-    optional = [("hid", "hidapi")]
+    optional = [("hid", "hidapi"), ("PIL", "pillow")]
 
     def missing(items):
         out = []
@@ -69,6 +69,8 @@ _ensure_dependencies()
 
 import sdcard
 import controller
+import labels
+import saves
 from ui import bold, dim, cyan, green, yellow, magenta, gold, DOT, ask
 
 
@@ -105,8 +107,12 @@ def main():
         print(f"    {cyan('4')}  Create backup")
         print(f"    {cyan('5')}  Restore backup")
         print(f"    {cyan('6')}  Clean backups")
+        print(bold("  CARTRIDGES"))
+        print(f"    {cyan('7')}  Set custom cartridge artwork")
+        print(bold("  SAVES"))
+        print(f"    {cyan('8')}  Back up / restore controller-pak saves")
         print(bold("  CONTROLLER"))
-        print(f"    {magenta('7')}  Update 8BitDo 64 controller (USB-C)")
+        print(f"    {magenta('9')}  Update 8BitDo 64 controller (USB-C)")
         print()
         print(f"    {dim('0')}  Quit")
 
@@ -115,13 +121,13 @@ def main():
         if choice in ("0", "q", "quit"):
             print(green("\nDone. Enjoy your Analogue 3D."))
             return
-        if choice not in ("1", "2", "3", "4", "5", "6", "7"):
+        if choice not in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
             print(yellow("Please enter a number from the menu."))
             continue
 
         if choice == "6":
             sdcard.clean_backups()
-        elif choice == "7":
+        elif choice == "9":
             controller.run_interactive()
         else:
             target_root = sdcard.select_sd_card()
@@ -133,8 +139,10 @@ def main():
             if choice in ("1", "2", "3"):
                 if choice in ("1", "3"):
                     sdcard.install_firmware(target_root)
-                if choice in ("1", "2"):
+                if choice == "1":
                     sdcard.install_labels(target_root)
+                elif choice == "2":
+                    sdcard.install_labels(target_root, sdcard.choose_label_source())
                 print(green("\nUpdate tasks completed!"))
                 if choice in ("1", "3"):
                     print(dim("For the firmware update: hold Pairing + Power on boot."))
@@ -142,6 +150,10 @@ def main():
                 sdcard.create_backup(target_root)
             elif choice == "5":
                 sdcard.restore_backup(target_root)
+            elif choice == "7":
+                labels.run_interactive(target_root)
+            elif choice == "8":
+                saves.run_interactive(target_root)
 
             print(dim("\nSafely eject your SD card when ready."))
 

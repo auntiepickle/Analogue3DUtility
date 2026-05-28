@@ -51,8 +51,10 @@ DOT = glyph("●", "*")  # filled dot for status lines
 
 
 def ask(prompt):
-    """input() that treats no-input/EOF as an empty (cancel-friendly) answer."""
+    """Prompt for input. On EOF (closed stdin / Ctrl-D) exit cleanly rather than
+    spinning, since there's no more input to act on."""
     try:
         return input(prompt).strip()
     except EOFError:
-        return ""
+        print()
+        sys.exit(0)

@@ -9,6 +9,7 @@ download
 
 # Backups created by the tool
 backups/
+save_backups/
 
 # Local editor / Claude Code config
 .claude/

@@ -32,6 +32,10 @@ Think of it as the spiritual successor to PocketSync, but for the Analogue 3D
 - **8BitDo 64 controller flashing** — updates the Analogue 3D's controller over
   USB‑C **without** 8BitDo's Ultimate Software, a browser, or any driver swap.
   Supports picking a specific firmware version (including official downgrades).
+- **Custom cartridge artwork** — replace any cart's label image with your own
+  (auto-resized), edited straight into `labels.db`.
+- **Controller-pak saves** — back up and restore your N64 save data
+  (`controller_pak.img`) per game.
 
 ---
 
@@ -72,11 +76,24 @@ on-screen update prompt.
 
 ---
 
-## Updating the 8BitDo 64 controller (option 7)
+## Custom cartridge artwork (option 7)
+
+Point the tool at an image and tell it which cartridge it's for — either by
+giving it the game's ROM (it computes the cart ID) or by entering the cart's
+8‑character ID. The image is resized to 74×86 and written into `labels.db` on
+the card, replacing that cart's label. Requires `pillow`.
+
+## Controller-pak saves (option 8)
+
+Lists every game on the card that has save data and lets you back it up (copied
+locally) or restore a previous backup. Useful before experimenting or to move
+saves between cards.
+
+## Updating the 8BitDo 64 controller (option 9)
 
 1. Connect the controller to your computer with a USB‑C **data** cable.
 2. Power it on.
-3. Run the tool and choose **option 7**.
+3. Run the tool and choose **option 9**.
 4. Pick a firmware version (press Enter for the latest) and confirm.
 
 The tool talks the controller's own HID flashing protocol directly — the same one
@@ -95,6 +112,16 @@ something newer, the tool will still list it but tag it **`untested`** and warn
 before flashing it. The maintainer bumps the tested ceiling
 (`MAX_TESTED_VERSION` in `controller.py`) as each new release is
 validated on real hardware.
+
+---
+
+## Roadmap / ideas
+
+- **Per-game display & hardware presets** — the Analogue 3D supports per-cart
+  settings (CRT/scanline modes, overclock, region override, etc.). Rather than
+  expose every knob (which is what makes other tools feel overwhelming), the plan
+  is to let you apply curated **presets pulled from a community source**, so you
+  get good results without hand-tuning jargon. Not built yet.
 
 ---
 
