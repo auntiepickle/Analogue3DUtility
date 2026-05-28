@@ -195,7 +195,7 @@ class EightBitDo64:
         status, echo = struct.unpack_from("<HH", resp, 1)
         if status != STATUS_ACK or echo != cmd:
             raise ControllerError(
-                f"cmd 0x{cmd:02x} rejected (status={status}, echo=0x{echo:02x})"
+                f"cmd 0x{cmd:02x} rejected (status={status}, echo=0x{echo:04x})"
             )
         return resp
 
@@ -291,43 +291,52 @@ def parse_header(blob):
 
 
 # --- high-level flows ----------------------------------------------------
-def diff_blocks(dev, header):
-    """Read-only: return the list of (index, address) blocks whose CRC differs."""
-    payload = header["payload"]
-    address = header["desAddress"]
-    diffs = []
-    total = len(payload)
-    nblocks = (total + BLOCK - 1) // BLOCK
-    for i in range(nblocks):
-        block = payload[i * BLOCK:(i + 1) * BLOCK]
-        our = crc16_modbus(block)
-        dev_crc = dev.read_region_crc(address)
-        if our != dev_crc:
-            diffs.append((i, address))
-        address += BLOCK
-    return diffs, nblocks
-
-
 def flash(dev, header, progress=None):
-    """Differential flash. Erases+writes only the 4KB blocks that differ."""
+    """Flash the firmware, then commit and reset.
+
+    The per-block CRC read is the device-side differential check the official
+    updater uses to decide whether to (re)write a block. The 64's firmware is
+    written through the device's *encrypted* write path, so the device computes
+    its CRC over the decrypted flash while we hold the encrypted .dat -- the two
+    never match, so in practice every block is (re)written. That's expected and
+    matches the official tool; success is confirmed afterwards by re-reading the
+    firmware version once the controller reboots (see run_interactive)."""
     payload = header["payload"]
     des_len = header["desLen"]
-    address = header["desAddress"]
-    written = 0
+    base = header["desAddress"]
     nblocks = (len(payload) + BLOCK - 1) // BLOCK
+
+    written = 0
     for i in range(nblocks):
         block = payload[i * BLOCK:(i + 1) * BLOCK]
-        our = crc16_modbus(block)
-        dev_crc = dev.read_region_crc(address)
-        if our != dev_crc:
+        address = base + i * BLOCK
+        if crc16_modbus(block) != dev.read_region_crc(address):
             dev.erase(address, len(block))
             dev.write_region(block, address, des_len)
         written += len(block)
         if progress:
             progress(written, des_len, i + 1, nblocks)
-        address += BLOCK
+
     dev.flash_info(des_len, header["version"])
     dev.reset()
+
+
+def reopen_and_read_version(retries=20, delay=1.5):
+    """After a flash+reset the controller reboots and re-enumerates. Poll for it
+    and return the firmware version it now reports, or None if it doesn't return."""
+    for _ in range(retries):
+        time.sleep(delay)
+        try:
+            dev = EightBitDo64().open()
+        except ControllerError:
+            continue
+        try:
+            return dev.read_version()
+        except ControllerError:
+            continue
+        finally:
+            dev.close()
+    return None
 
 
 def _progress(written, total, block, nblocks):
@@ -397,14 +406,23 @@ def run_interactive():
     finally:
         dev.close()
 
-    print("Done! The controller will reboot into the new firmware.")
-    print("If it doesn't reconnect, power-cycle it.")
+    expected = header["version"]
+    print("Controller is rebooting; verifying new firmware...")
+    new_ver = reopen_and_read_version()
+    if new_ver == expected:
+        print(f"Success! Controller is now running firmware {format_version(new_ver)}.")
+    elif new_ver is not None:
+        print(f"Flashed, but controller reports {format_version(new_ver)} "
+              f"(expected {format_version(expected)}). Try power-cycling it.")
+    else:
+        print(f"Flash sent. Couldn't re-read the controller yet; power-cycle it and "
+              f"it should be on {format_version(expected)}.")
 
 
 __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
     "fetch_firmware_meta", "download_firmware", "parse_header",
-    "diff_blocks", "flash", "run_interactive",
+    "flash", "reopen_and_read_version", "run_interactive",
 ]
 
 

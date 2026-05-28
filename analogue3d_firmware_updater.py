@@ -18,8 +18,6 @@ import psutil
 from urllib.parse import urljoin
 from datetime import datetime
 
-import eightbitdo_64_updater
-
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
 LABELS_DB_FILENAME = "labels.db"
@@ -388,6 +386,7 @@ def main():
         if choice == "6":
             clean_backups()
         elif choice == "7":
+            import eightbitdo_64_updater
             eightbitdo_64_updater.run_interactive()
         else:
             # All other options need the SD card
