@@ -23,7 +23,8 @@ def _ensure_dependencies():
     run the script. requests/bs4/psutil are required; hidapi (controller) and
     pillow (custom artwork) are optional."""
     required = [("requests", "requests"), ("bs4", "beautifulsoup4"), ("psutil", "psutil")]
-    optional = [("hid", "hidapi"), ("PIL", "pillow")]
+    optional = [("hid", "hidapi"), ("PIL", "pillow"),
+                ("rich", "rich"), ("questionary", "questionary")]
 
     def missing(items):
         out = []

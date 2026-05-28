@@ -354,6 +354,42 @@ def reopen_and_read_version(retries=20, delay=1.5):
     return None
 
 
+def is_connected():
+    """True if an 8BitDo 64 is plugged in and reachable over HID."""
+    if hid is None:
+        return False
+    try:
+        return EightBitDo64.find_path() is not None
+    except ControllerError:
+        return False
+
+
+def update_to_latest(progress=None):
+    """Non-interactive: flash the latest firmware if the connected 64 is behind.
+    Returns a short human-readable status string (used by the 'auto' flow)."""
+    if hid is None:
+        return "skipped (hidapi not installed)"
+    if not is_connected():
+        return "skipped (controller not connected)"
+    try:
+        latest = fetch_firmware_list()[0]
+        header = parse_header(download_firmware(latest))
+    except (requests.RequestException, ControllerError, ValueError) as e:
+        return f"skipped (could not fetch firmware: {e})"
+    dev = EightBitDo64().open()
+    try:
+        current = dev.read_version()
+        if current >= header["version"]:
+            return f"already on {format_version(current)}"
+        flash(dev, header, progress=progress)
+    except ControllerError as e:
+        return f"failed ({e})"
+    finally:
+        dev.close()
+    new_ver = reopen_and_read_version()
+    return f"updated to {format_version(new_ver)}" if new_ver else "flashed (verify pending)"
+
+
 def _progress(written, total, block, nblocks):
     pct = min(100, written * 100 // total)
     bar = "#" * (pct // 4) + "-" * (25 - pct // 4)
@@ -488,6 +524,7 @@ __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
     "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
     "parse_header", "flash", "reopen_and_read_version", "run_interactive",
+    "is_connected", "update_to_latest",
 ]
 
 
