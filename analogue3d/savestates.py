@@ -19,6 +19,7 @@ import os
 import re
 import io
 import shutil
+import zipfile
 from datetime import datetime
 
 MEM_SUBPATH = ("Memories", "N64")
@@ -112,65 +113,135 @@ def thumbnail(png_path, max_px=260, quality=82):
         return buf.getvalue()
 
 
-def backup_state(state_path, cart_id, name=None):
-    """Copy one save-state PNG (verbatim) into the local backup folder."""
-    dest_dir = os.path.join(_backup_dir(), cart_id)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, name or os.path.basename(state_path))
-    shutil.copy2(state_path, dest)
-    return dest
+SNAPSHOT_PREFIX = "memories_"
 
 
-def backup_game(game):
-    """Back up every state of one game. Returns the number copied."""
-    for s in game["states"]:
-        backup_state(s["path"], game["cart_id"], s["name"])
-    return len(game["states"])
+def _split_folder(folder):
+    """(title, cart_id) from a '<Title> <8hexid>' game folder name."""
+    m = _ID_RE.search(folder)
+    cart_id = m.group(1).lower() if m else "????????"
+    title = folder[:m.start()].strip() if m else folder
+    return title or folder, cart_id
 
 
-def list_backups():
-    """Return {cart_id: [backup_path, ...]} of locally stored state backups."""
-    root = _backup_dir()
-    out = {}
-    if not os.path.isdir(root):
+def archive_all(sd_root):
+    """Zip every save state on the card into one timestamped snapshot, preserving
+    the per-game folder structure inside (so a single game can be restored later).
+    Returns (zip_path, n_states); (None, 0) if there are no save states."""
+    games = find_game_states(sd_root)
+    total = sum(g["count"] for g in games)
+    if total == 0:
+        return (None, 0)
+    os.makedirs(_backup_dir(), exist_ok=True)
+    base = memories_dir(sd_root)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    zip_path = os.path.join(_backup_dir(), f"{SNAPSHOT_PREFIX}{stamp}.zip")
+    # PNGs are already compressed, so store (don't re-deflate) for speed.
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
+        for g in games:
+            for s in g["states"]:
+                arc = os.path.relpath(s["path"], base).replace(os.sep, "/")
+                z.write(s["path"], arc)
+    return (zip_path, total)
+
+
+def _snapshot_path(name):
+    return os.path.join(_backup_dir(), os.path.basename(name))
+
+
+def list_snapshots():
+    """All snapshot zips, newest first, each with the per-game breakdown it holds."""
+    d = _backup_dir()
+    out = []
+    if not os.path.isdir(d):
         return out
-    for cart_id in sorted(os.listdir(root)):
-        d = os.path.join(root, cart_id)
-        if os.path.isdir(d):
-            pngs = sorted((os.path.join(d, f) for f in os.listdir(d)
-                           if f.lower().endswith(".png")), reverse=True)
-            if pngs:
-                out[cart_id] = pngs
+    for name in os.listdir(d):
+        if not (name.startswith(SNAPSHOT_PREFIX) and name.lower().endswith(".zip")):
+            continue
+        path = os.path.join(d, name)
+        out.append({
+            "name": name,
+            "bytes": os.path.getsize(path),
+            "games": snapshot_games(name),
+        })
+    out.sort(key=lambda s: s["name"], reverse=True)
     return out
 
 
-def trim_to_latest(game, keep=DEFAULT_KEEP, backup_first=True):
-    """Delete all but the newest `keep` states for a game, archiving the removed
-    ones to the local backup folder first (unless backup_first is False).
-    Returns (removed_count, kept_count)."""
+def snapshot_games(name):
+    """Per-game breakdown of a snapshot: [{cart_id, title, count}], by title."""
+    path = _snapshot_path(name)
+    games = {}
+    if not os.path.isfile(path):
+        return []
+    with zipfile.ZipFile(path) as z:
+        for n in z.namelist():
+            if n.endswith("/"):
+                continue
+            parts = n.split("/")
+            folder = parts[-2] if len(parts) >= 2 else ""
+            title, cart_id = _split_folder(folder)
+            g = games.setdefault(cart_id, {"cart_id": cart_id, "title": title, "count": 0})
+            g["count"] += 1
+    return sorted(games.values(), key=lambda g: g["title"].lower())
+
+
+def restore_snapshot(sd_root, name, cart_id=None):
+    """Restore a snapshot back onto the card. If cart_id is given, only that game's
+    states are restored; otherwise the whole snapshot. Returns how many were written."""
+    path = _snapshot_path(name)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(name)
+    base = memories_dir(sd_root)
+    os.makedirs(base, exist_ok=True)
+    n = 0
+    with zipfile.ZipFile(path) as z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            parts = info.filename.split("/")
+            folder = parts[-2] if len(parts) >= 2 else ""
+            if cart_id and _split_folder(folder)[1] != cart_id:
+                continue
+            dest = os.path.join(base, *parts)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with z.open(info) as src, open(dest, "wb") as out:
+                shutil.copyfileobj(src, out)
+            n += 1
+    return n
+
+
+def delete_snapshot(name):
+    path = _snapshot_path(name)
+    if os.path.isfile(path):
+        os.remove(path)
+        return True
+    return False
+
+
+def trim_to_latest(game, keep=DEFAULT_KEEP):
+    """Delete all but the newest `keep` states for a game (newest-first already).
+    Returns (removed_count, kept_count). Caller is responsible for archiving first."""
     keep = max(0, keep)
-    states = game["states"]  # newest-first
-    to_remove = states[keep:]
+    to_remove = game["states"][keep:]
     for s in to_remove:
-        if backup_first:
-            backup_state(s["path"], game["cart_id"], s["name"])
         try:
             os.remove(s["path"])
         except OSError:
             pass
-    return len(to_remove), min(keep, len(states))
+    return len(to_remove), min(keep, game["count"])
 
 
-def restore_state(backup_path, game_folder_path):
-    """Copy a backed-up state PNG back into a game's Memories folder."""
-    os.makedirs(game_folder_path, exist_ok=True)
-    dest = os.path.join(game_folder_path, os.path.basename(backup_path))
-    shutil.copy2(backup_path, dest)
-    return dest
+def delete_state(state_path):
+    """Delete a single save-state file from the card."""
+    if os.path.isfile(state_path):
+        os.remove(state_path)
+        return True
+    return False
 
 
 __all__ = [
     "find_game_states", "find_game", "memories_dir", "thumbnail",
-    "backup_state", "backup_game", "list_backups", "trim_to_latest",
-    "restore_state", "DEFAULT_KEEP",
+    "archive_all", "list_snapshots", "snapshot_games", "restore_snapshot",
+    "delete_snapshot", "trim_to_latest", "delete_state", "DEFAULT_KEEP",
 ]
