@@ -496,6 +496,64 @@ def update_all(progress=None, announce=None):
             "already": max(total - updated - failed, 0), "failed": failed}
 
 
+def update_all_to(meta, progress=None, announce=None):
+    """Flash EVERY connected 8BitDo 64 to a specific firmware release `meta` (an
+    entry from fetch_firmware_list), allowing downgrades. Flashes any controller
+    not already on that exact version, re-enumerating between flashes. Returns the
+    same summary dict shape as update_all()."""
+    if hid is None:
+        return {"total": 0, "updated": 0, "already": 0, "failed": 0, "note": "hidapi not installed"}
+    total = connected_count()
+    if total == 0:
+        return {"total": 0, "updated": 0, "already": 0, "failed": 0, "note": "no controller connected"}
+    target = meta["version_int"]
+    try:
+        header = parse_header(download_firmware(meta))
+    except (requests.RequestException, ControllerError, ValueError) as e:
+        return {"total": total, "updated": 0, "already": 0, "failed": 0, "note": f"download failed: {e}"}
+    changed = failed = 0
+
+    for _ in range(total + 3):  # cap so a stuck unit can't loop forever
+        target_path, current = None, None
+        for p in EightBitDo64.find_all_paths():
+            c = EightBitDo64()
+            try:
+                c.open(p)
+                v = c.read_version()
+            except (ControllerError, OSError, ValueError, struct.error):
+                v = None
+            finally:
+                c.close()
+            if v is not None and v != target:  # != so downgrades flash too
+                target_path, current = p, v
+                break
+        if target_path is None:
+            break  # everything is on the target version
+
+        if announce:
+            announce(current, target)
+        c = EightBitDo64()
+        ok = False
+        try:
+            c.open(target_path)
+            flash(c, header, progress=progress)
+            ok = True
+        except (ControllerError, OSError, ValueError, struct.error) as e:
+            failed += 1
+            note = f"a controller failed: {e}"
+        finally:
+            c.close()
+        if ok:
+            changed += 1
+            _wait_until_ready(total)
+        else:
+            return {"total": total, "updated": changed, "already": total - changed - failed,
+                    "failed": failed, "note": note}
+
+    return {"total": total, "updated": changed,
+            "already": max(total - changed - failed, 0), "failed": failed}
+
+
 def _run_update_all():
     """Interactive wrapper around update_all(): progress + a summary line."""
     def announce(cur, tgt):
@@ -657,6 +715,7 @@ __all__ = [
     "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
     "parse_header", "flash", "reopen_and_read_version", "run_interactive",
     "is_connected", "connected_count", "update_to_latest", "update_all",
+    "update_all_to",
 ]
 
 

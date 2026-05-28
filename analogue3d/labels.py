@@ -83,6 +83,31 @@ def read_ids(db_path):
     return ids
 
 
+def read_label_image(db_path, cart_id_hex):
+    """Return a PIL RGBA Image of the cart's stored art in labels.db, or None if
+    that cart has no slot. Inverse of image_to_slot (BGRA on disk -> RGBA)."""
+    from PIL import Image
+    try:
+        cart_id = int(cart_id_hex, 16)
+    except (TypeError, ValueError):
+        return None
+    ids = read_ids(db_path)
+    if cart_id not in ids:
+        return None
+    index = ids.index(cart_id)
+    with open(db_path, "rb") as f:
+        f.seek(DATA_START + index * SLOT_SIZE)
+        slot = f.read(IMG_BYTES)
+    if len(slot) < IMG_BYTES:
+        return None
+    rgba = bytearray(IMG_BYTES)
+    rgba[0::4] = slot[2::4]  # R <- B
+    rgba[1::4] = slot[1::4]  # G
+    rgba[2::4] = slot[0::4]  # B <- R
+    rgba[3::4] = slot[3::4]  # A
+    return Image.frombytes("RGBA", (IMG_W, IMG_H), bytes(rgba))
+
+
 def image_to_slot(image_path):
     """Resize an image to 74x86 and return a 25600-byte BGRA+padding slot."""
     from PIL import Image, ImageOps
@@ -183,5 +208,5 @@ def run_interactive(sd_root):
     print(green(f"{verb} artwork for cart {cart_id}. It'll show on the console next boot."))
 
 
-__all__ = ["compute_cart_id", "read_ids", "image_to_slot", "set_label",
-           "convert_to_z64", "have_pillow", "run_interactive"]
+__all__ = ["compute_cart_id", "read_ids", "read_label_image", "image_to_slot",
+           "set_label", "convert_to_z64", "have_pillow", "run_interactive"]
