@@ -32,8 +32,8 @@ Navigate with the **arrow keys** (falls back to a numbered menu in plain
 terminals).
 
 - **Auto — do everything** — one choice backs up the card, updates console
-  firmware, installs the art pack, and (if it's plugged in) updates the
-  8BitDo 64 controller.
+  firmware, installs the art pack, and updates every connected 8BitDo 64
+  controller. Run it unattended with `python a3d.py --auto`.
 - **Console firmware** — grabs the latest Analogue 3D firmware from `analogue.co`
   and copies it to the SD card, cleaning up old `a3d_os_*.bin` files.
 - **Cartridge art packs** — install a community art pack (RetroGameCorps), a
@@ -44,7 +44,8 @@ terminals).
   (`controller_pak.img`) per game.
 - **8BitDo 64 controller flashing** — updates the Analogue 3D's controller over
   USB‑C **without** 8BitDo's Ultimate Software, a browser, or any driver swap.
-  Pick a specific firmware version (including official downgrades).
+  Pick a specific firmware version (including official downgrades), or update
+  several connected controllers at once.
 - **Advanced** — set one cartridge's art by ID/ROM, and clean old backups.
 
 ---
@@ -130,6 +131,10 @@ reboots the controller and re-reads the version to confirm success.
 **Downgrades are supported.** 8BitDo's own updater lets you choose older official
 releases, and so does this tool — handy if a new release misbehaves. Downgrades
 are flagged with a warning since they're less common than updates.
+
+**Multiple controllers?** Plug in several and the tool offers to update them all to
+the latest at once. (They share a generic serial, so it can't target a single one
+for a specific version — connect just one controller when you want to pick a version.)
 
 ### Supported firmware
 
