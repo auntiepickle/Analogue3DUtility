@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 230" width="820" height="230" role="img" aria-label="Analogue 3D Utility">
+  <title>Analogue 3D Utility</title>
+
+  <!-- backdrop -->
+  <rect width="820" height="230" fill="#0a0a0a"/>
+
+  <!-- terminal window -->
+  <rect x="20" y="18" width="780" height="194" rx="14" fill="#121212" stroke="#2a2a2a" stroke-width="2"/>
+  <line x1="20" y1="54" x2="800" y2="54" stroke="#262626" stroke-width="2"/>
+
+  <!-- title bar -->
+  <circle cx="46" cy="36" r="5" fill="#F4CD01"/>
+  <circle cx="66" cy="36" r="5" fill="#464646"/>
+  <circle cx="86" cy="36" r="5" fill="#464646"/>
+  <text x="108" y="41" font-family="Consolas,'SF Mono',Menlo,monospace" font-size="14" fill="#6e6e6e">a3d.py</text>
+
+  <!-- shell prompt line -->
+  <text x="52" y="88" font-family="Consolas,'SF Mono',Menlo,monospace" font-size="15" font-weight="bold">
+    <tspan fill="#4ade80">&gt;&#160;</tspan><tspan fill="#6e6e6e">analogue 3d utility</tspan>
+  </text>
+
+  <!-- wordmark -->
+  <text x="50" y="134" font-family="'Arial Black','Segoe UI',Arial,sans-serif" font-size="52" font-weight="800" letter-spacing="1" fill="#F4CD01">ANALOGUE 3D</text>
+
+  <!-- UTILITY pill -->
+  <rect x="54" y="151" width="150" height="30" rx="15" fill="#F4CD01"/>
+  <text x="129" y="171" text-anchor="middle" font-family="'Arial Black','Segoe UI',Arial,sans-serif" font-size="14" font-weight="800" letter-spacing="5" fill="#0a0a0a">UTILITY</text>
+
+  <!-- status dots -->
+  <g font-family="Consolas,'SF Mono',Menlo,monospace" font-size="14" fill="#969696">
+    <circle cx="240" cy="166" r="5" fill="#4ade80"/><text x="252" y="171">firmware</text>
+    <circle cx="360" cy="166" r="5" fill="#4ade80"/><text x="372" y="171">art packs</text>
+    <circle cx="500" cy="166" r="5" fill="#4ade80"/><text x="512" y="171">saves</text>
+    <circle cx="600" cy="166" r="5" fill="#4ade80"/><text x="612" y="171">8BitDo 64</text>
+  </g>
+</svg>
