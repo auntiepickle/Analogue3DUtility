@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" width="100%" alt="Analogue 3D Utility">
+  <img src="assets/banner.svg" width="100%" alt="Analogue 3D Utility">
 </p>
 
 <p align="center">
