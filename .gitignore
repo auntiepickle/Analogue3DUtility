@@ -2,10 +2,11 @@
 __pycache__/
 *.pyc
 
-# Downloaded / generated firmware artifacts (re-downloaded on demand)
+# Downloaded / generated artifacts (re-downloaded on demand)
 a3d_os_*.bin
 download
 *.dat
+labels.db
 
 # Backups created by the tool
 backups/
