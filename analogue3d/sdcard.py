@@ -269,9 +269,16 @@ def install_firmware(target_root):
     
     return True
 
-def install_labels(target_root, source_url=None):
-    print("\n=== Installing/Updating Cartridge Labels ===")
-    local_labels_path = download_file(source_url or LABELS_DB_URL, dest_folder=".")
+def install_labels(target_root, source=None):
+    """Install a cartridge art pack (labels.db). `source` may be a URL or a path
+    to a local labels.db file you've assembled; defaults to the community pack."""
+    print("\n=== Installing Cartridge Art Pack ===")
+    src = source or LABELS_DB_URL
+    if os.path.isfile(src):
+        print(f"Loading art pack from local file: {src}")
+        local_labels_path = src
+    else:
+        local_labels_path = download_file(src, dest_folder=".")
 
     labels_dir = os.path.join(target_root, "Library", "N64", "Images")
     os.makedirs(labels_dir, exist_ok=True)
@@ -280,7 +287,7 @@ def install_labels(target_root, source_url=None):
     print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
     shutil.copy(local_labels_path, dest_path)
 
-    print(green("Cartridge labels updated - your cart art will now show."))
+    print(green("Cartridge art pack installed - your cart art will now show."))
 
 def create_backup(target_root):
     print("\n=== Creating Backup ===")
