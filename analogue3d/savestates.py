@@ -22,7 +22,7 @@ import shutil
 import zipfile
 from datetime import datetime
 
-from . import config
+from . import config, ui
 
 MEM_SUBPATH = ("Memories", "N64")
 DEFAULT_KEEP = 20  # the console's per-game save-state cap
@@ -242,8 +242,113 @@ def delete_state(state_path):
     return False
 
 
+def _restore_flow(sd_root, snaps):
+    snap = ui.select("Restore from which snapshot?",
+                     [(s["name"], s["name"]) for s in snaps] + [("Cancel", "cancel")])
+    if snap in (None, "cancel"):
+        return
+    sgames = snapshot_games(snap)
+    scope = ui.select("Restore what?",
+                      [("Everything in this snapshot", "all")] +
+                      [(f"Just {g['title']} [{g['cart_id']}] ({g['count']})", g["cart_id"]) for g in sgames] +
+                      [("Cancel", "cancel")])
+    if scope in (None, "cancel"):
+        return
+    if not ui.confirm("Restore onto the card? Files with the same name are overwritten.", default=False):
+        return
+    try:
+        n = restore_snapshot(sd_root, snap, cart_id=None if scope == "all" else scope)
+    except FileNotFoundError:
+        ui.err("Snapshot not found.")
+        return
+    ui.ok(f"Restored {n} save state(s) from {snap}.")
+
+
+def _trim_flow(sd_root, games):
+    folder = ui.select("Trim which game to its newest N?",
+                       [(f"{g['title']} [{g['cart_id']}] ({g['count']})", g["folder"]) for g in games] +
+                       [("Cancel", "cancel")])
+    if folder in (None, "cancel"):
+        return
+    g = find_game(sd_root, folder)
+    if not g:
+        ui.err("Game not found on the card.")
+        return
+    raw = ui.text(f"Keep how many newest? (default {DEFAULT_KEEP})") or str(DEFAULT_KEEP)
+    try:
+        keep = max(0, int(raw))
+    except ValueError:
+        ui.err("Not a number.")
+        return
+    if not ui.confirm(f"Snapshot everything first, then keep the newest {keep} of {g['title']}?", default=True):
+        return
+    archive_all(sd_root)  # safety snapshot before deleting
+    removed, kept = trim_to_latest(g, keep=keep)
+    ui.ok(f"{g['title']}: removed {removed} older state(s); kept the newest {kept}.")
+
+
+def _delete_snapshot_flow(snaps):
+    snap = ui.select("Delete which snapshot?",
+                     [(s["name"], s["name"]) for s in snaps] + [("Cancel", "cancel")])
+    if snap in (None, "cancel"):
+        return
+    if not ui.confirm(f"Delete {snap}? This can't be undone.", default=False):
+        return
+    delete_snapshot(snap)
+    ui.ok("Snapshot deleted.")
+
+
+def run_interactive(sd_root):
+    print("\n=== Save States (Memories) ===")
+    while True:
+        games = find_game_states(sd_root)
+        snaps = list_snapshots()
+        total = sum(g["count"] for g in games)
+        ui.info(f"  {ui.DOT} {total} save state(s) across {len(games)} game(s) on the card; "
+                f"{len(snaps)} local snapshot(s).")
+        action = ui.select("Save states", [
+            ("Archive all save states now (snapshot)", "archive"),
+            ("Restore from a snapshot (all or one game)", "restore"),
+            ("Trim a game to its newest N", "trim"),
+            ("Delete a snapshot", "delsnap"),
+            ("List games and states", "list"),
+            ("Back", "back"),
+        ])
+        if action in (None, "back"):
+            return
+        if action == "archive":
+            path, n = archive_all(sd_root)
+            if path:
+                ui.ok(f"Archived {n} save state(s) -> {os.path.basename(path)}")
+            else:
+                ui.warn("No save states on the card to archive.")
+        elif action == "list":
+            if not games:
+                ui.warn("No save states on the card.")
+            for g in games:
+                ui.info(f"  {g['title']} [{g['cart_id']}] - {g['count']} state(s), "
+                        f"{g['total_bytes'] // (1024 * 1024)} MB")
+        elif action == "restore":
+            if not snaps:
+                ui.warn("No snapshots yet - archive first.")
+            else:
+                _restore_flow(sd_root, snaps)
+        elif action == "trim":
+            if not games:
+                ui.warn("No save states on the card.")
+            else:
+                _trim_flow(sd_root, games)
+        elif action == "delsnap":
+            if not snaps:
+                ui.warn("No snapshots to delete.")
+            else:
+                _delete_snapshot_flow(snaps)
+        ui.rule()
+
+
 __all__ = [
     "find_game_states", "find_game", "memories_dir", "thumbnail",
     "archive_all", "list_snapshots", "snapshot_games", "restore_snapshot",
-    "delete_snapshot", "trim_to_latest", "delete_state", "DEFAULT_KEEP",
+    "delete_snapshot", "trim_to_latest", "delete_state", "run_interactive",
+    "DEFAULT_KEEP",
 ]

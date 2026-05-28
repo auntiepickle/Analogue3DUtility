@@ -8,7 +8,7 @@ import os
 
 import requests
 
-from . import sdcard, controller, labels, saves, ui
+from . import sdcard, controller, labels, saves, savestates, config, ui
 
 
 def _status():
@@ -123,6 +123,32 @@ def _advanced():
         ui.rule()
 
 
+def _settings_flow():
+    while True:
+        cur = config.get_backup_root()
+        ui.info(f"  {ui.DOT} Backup location: {cur}"
+                + ("" if config.is_custom_backup_root() else "  (default)"))
+        legacy = config.legacy_backup_root()
+        if legacy and legacy != cur:
+            ui.warn(f"Older backups remain at: {legacy}")
+        action = ui.select("Settings", [
+            ("Change backup location", "change"),
+            ("Reset to default", "reset"),
+            ("Back", "back"),
+        ])
+        if action in (None, "back"):
+            return
+        if action == "change":
+            p = ui.text("New backup folder (full path):").strip('"')
+            if p:
+                config.set_backup_root(p)
+                ui.ok("Backup location set to: " + config.get_backup_root())
+        elif action == "reset":
+            config.set_backup_root("")
+            ui.ok("Reset to default: " + config.get_backup_root())
+        ui.rule()
+
+
 def main():
     ui.banner()
     while True:
@@ -135,8 +161,10 @@ def main():
             ("Back up SD card", "backup"),
             ("Restore SD backup", "restore"),
             ("Back up / restore game saves", "saves"),
+            ("Manage save states (Memories)", "savestates"),
             ("Flash 8BitDo 64 controller", "controller"),
             None,
+            ("Settings", "settings"),
             ("Advanced", "advanced"),
             ("Quit", "quit"),
         ])
@@ -151,6 +179,8 @@ def main():
             controller.run_interactive()
         elif action == "advanced":
             _advanced()
+        elif action == "settings":
+            _settings_flow()
         else:
             root = sdcard.select_sd_card()
             if root is None:
@@ -168,6 +198,8 @@ def main():
                 sdcard.restore_backup(root)
             elif action == "saves":
                 saves.run_interactive(root)
+            elif action == "savestates":
+                savestates.run_interactive(root)
             ui.info("Safely eject your SD card when ready.")
 
         ui.rule()
