@@ -145,7 +145,7 @@ def run_interactive(sd_root):
     db_path = os.path.join(sd_root, "Library", "N64", "Images", "labels.db")
     if not os.path.isfile(db_path):
         print(yellow("No labels.db on the card yet."))
-        print(dim("Install labels first (menu option 2), then come back."))
+        print(dim("Install a cartridge art pack first, then come back."))
         return
 
     image_path = ask("Path to your image (PNG/JPG, will be resized to 74x86): ").strip('"')
