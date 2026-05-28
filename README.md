@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" width="100%" alt="Analogue 3D Utility">
+  <img src="assets/banner.png" width="100%" alt="Analogue 3D Utility">
 </p>
 
 <p align="center">
@@ -67,20 +67,24 @@ rather install them yourself up front, run `pip install -r requirements.txt`.
 ### Requirements
 
 - Python 3.7+
-- The packages in [`requirements.txt`](requirements.txt): `requests`,
-  `beautifulsoup4`, `psutil`, and `hidapi`.
-- `hidapi` is only needed for the controller updater (option 7); everything else
-  works without it.
+- The packages in [`requirements.txt`](requirements.txt):
+  - **Core:** `requests`, `beautifulsoup4`, `psutil`
+  - **Nicer UI:** `rich`, `questionary` (arrow-key menu; without them you get a
+    plain numbered menu)
+  - **Feature extras:** `hidapi` (8BitDo 64 controller), `pillow` (custom cart art)
+- The launcher offers to install all of these for you on first run; missing
+  optional packages just disable their feature, they don't block the tool.
 
 ---
 
 ## Updating the Analogue 3D (SD card)
 
-Pop the console's SD card into your computer and run the tool. Options 1–5 cover
-firmware, labels, backups, and restores. The tool auto-detects removable drives
-and will auto-pick a card labelled **ANALOGUE 3D** when it finds one. After a
-firmware update, eject the card, put it back in the console, and follow Analogue's
-on-screen update prompt.
+Pop the console's SD card into your computer and run the tool. The menu covers
+firmware, art packs, backups, and restores. The tool auto-detects the card by its
+contents (an `a3d_os_*.bin` file, `Library`/`Settings` folders, or an
+**ANALOGUE 3D** volume label) and pre-selects it, so you usually just confirm.
+After a firmware update, eject the card, put it back in the console, and follow
+Analogue's on-screen update prompt.
 
 ---
 

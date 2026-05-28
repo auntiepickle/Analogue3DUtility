@@ -58,14 +58,14 @@ def _auto_all():
         return
 
     controller_present = controller.is_connected()
-    ui.info("This will:")
+    ui.info("This will, for every part that applies:")
     print(f"   {ui.DOT} Back up the SD card")
     print(f"   {ui.DOT} Update the console firmware")
     print(f"   {ui.DOT} Install the community cartridge art pack")
     if controller_present:
-        print(f"   {ui.DOT} Update the 8BitDo 64 controller")
+        print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.green("(detected)"))
     else:
-        print(ui.dim("   (no 8BitDo 64 controller detected - it'll be skipped)"))
+        print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.dim("(not detected - will skip)"))
 
     if not ui.confirm("Proceed?", default=True):
         ui.warn("Cancelled.")
@@ -113,7 +113,7 @@ def main():
     while True:
         _status()
         action = ui.select("What would you like to do?", [
-            ("Auto - do everything (backup + updates)", "auto"),
+            ("Auto - do everything (backup, firmware, art pack, controller)", "auto"),
             None,
             ("Update console firmware", "firmware"),
             ("Install cartridge art pack", "artpack"),
