@@ -11,6 +11,14 @@ controller flashing — all from one terminal menu.
 Think of it as the spiritual successor to PocketSync, but for the Analogue 3D
 (until someone makes a proper GUI).
 
+> ### Usage in one line
+> **If you have Python, just run it** — the script installs anything it needs and
+> drops you into a menu:
+> ```bash
+> python analogue3d_firmware_updater.py
+> ```
+> It auto-detects your Analogue 3D SD card and walks you through the rest.
+
 ---
 
 ## Features
@@ -39,18 +47,19 @@ python -m venv .venv
 # Windows:        .venv\Scripts\activate
 # macOS / Linux:  source .venv/bin/activate
 
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Run it
+# 3. Run it (it installs its own dependencies the first time)
 python analogue3d_firmware_updater.py
 ```
 
 Then pick what you want from the menu. That's it.
 
-> **Don't want a virtual environment?** You can just run
-> `pip install -r requirements.txt` against your system Python and skip step 2 —
-> the venv simply keeps these packages from mixing with everything else.
+On first launch the script checks for the packages it needs and offers to
+`pip install` them for you, so you don't have to install anything by hand. If you'd
+rather install them yourself up front, run `pip install -r requirements.txt`.
+
+> **Don't want a virtual environment?** Skip step 2 and just run the script against
+> your system Python — the venv simply keeps these packages from mixing with
+> everything else.
 
 ### Requirements
 

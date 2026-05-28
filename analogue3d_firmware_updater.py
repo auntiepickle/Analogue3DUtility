@@ -12,16 +12,104 @@ import sys
 import shutil
 import zipfile
 import ctypes
+import subprocess
+from urllib.parse import urljoin
+from datetime import datetime
+
+
+def _ensure_dependencies():
+    """Make this runnable with nothing but Python installed: detect any missing
+    packages and offer to pip-install them automatically, so a user can just run
+    the script. requests/bs4/psutil are required; hidapi is optional (controller)."""
+    required = [("requests", "requests"), ("bs4", "beautifulsoup4"), ("psutil", "psutil")]
+    optional = [("hid", "hidapi")]
+
+    def missing(items):
+        out = []
+        for mod, pkg in items:
+            try:
+                __import__(mod)
+            except ImportError:
+                out.append(pkg)
+        return out
+
+    miss_req, miss_opt = missing(required), missing(optional)
+    if not miss_req and not miss_opt:
+        return
+
+    print("This tool needs a few Python packages that aren't installed yet:")
+    print("   " + ", ".join(miss_req + miss_opt))
+    try:
+        answer = input("Install them now with pip? [Y/n]: ").strip().lower()
+    except EOFError:
+        answer = "y"
+    if answer not in ("", "y", "yes"):
+        if miss_req:
+            print("Can't continue without: " + ", ".join(miss_req))
+            print("Install manually:  pip install " + " ".join(miss_req))
+            sys.exit(1)
+        return
+
+    def pip_install(pkgs):
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *pkgs])
+            return True
+        except (subprocess.CalledProcessError, OSError):
+            return False
+
+    if miss_req and not pip_install(miss_req):
+        print("Auto-install failed. Please run:  pip install " + " ".join(miss_req))
+        sys.exit(1)
+    if miss_opt and not pip_install(miss_opt):
+        print("Note: couldn't install " + ", ".join(miss_opt) +
+              " (only needed for the controller updater) - continuing without it.")
+    if missing(required):
+        print("Packages still missing. Please run:  pip install " + " ".join(miss_req))
+        sys.exit(1)
+
+
+_ensure_dependencies()
+
 import requests
 from bs4 import BeautifulSoup
 import psutil
-from urllib.parse import urljoin
-from datetime import datetime
 
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
 LABELS_DB_FILENAME = "labels.db"
 ANALOGUE_VOLUME_LABEL = "ANALOGUE 3D"
+
+
+# --- terminal niceties ---------------------------------------------------
+def _enable_color():
+    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
+        return False
+    if os.name == "nt":
+        try:
+            k = ctypes.windll.kernel32
+            h = k.GetStdHandle(-11)
+            mode = ctypes.c_uint32()
+            k.GetConsoleMode(h, ctypes.byref(mode))
+            k.SetConsoleMode(h, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        except Exception:
+            return False
+    return True
+
+
+_COLOR = _enable_color()
+
+
+def _c(text, code):
+    return f"\033[{code}m{text}\033[0m" if _COLOR else text
+
+
+def bold(t):    return _c(t, "1")
+def dim(t):     return _c(t, "2")
+def cyan(t):    return _c(t, "96")
+def green(t):   return _c(t, "92")
+def yellow(t):  return _c(t, "93")
+def red(t):     return _c(t, "91")
+def magenta(t): return _c(t, "95")
 
 def get_latest_firmware_url():
     print("Fetching latest firmware info from Analogue...")
@@ -94,73 +182,121 @@ def get_volume_label(mount):
     # macOS/Linux: volume label is the last path component of the mount point.
     return os.path.basename(mount.rstrip(os.sep))
 
-def get_potential_sd_cards():
-    candidates = []
+def _analogue_signature(mount, label):
+    """Score how likely a drive is the Analogue 3D card, by label + contents."""
+    score = 0
+    reasons = []
+    if label.strip().upper() == ANALOGUE_VOLUME_LABEL:
+        score += 5
+        reasons.append("volume label")
+    try:
+        entries = os.listdir(mount)
+    except OSError:
+        entries = []
+    if any(re.match(r"a3d_os_.*\.bin$", e, re.IGNORECASE) for e in entries):
+        score += 4
+        reasons.append("firmware file")
+    lower = {e.lower() for e in entries}
+    if "library" in lower and "settings" in lower:
+        score += 3
+        reasons.append("Library + Settings")
+    return score, reasons
 
+
+def get_potential_sd_cards():
+    """Return drive dicts, best Analogue-3D candidate first."""
+    candidates = []
+    seen = set()
     for part in psutil.disk_partitions():
         mount = part.mountpoint
-
         if not os.access(mount, os.W_OK):
             continue
-
-        is_removable = ("removable" in part.opts.lower() or "cdrom" not in part.opts.lower())
-        is_sd_like = part.fstype.lower() in ["fat", "fat32", "exfat", "vfat", "ntfs"]
+        opts = part.opts.lower()
+        fstype = part.fstype.lower()
+        is_removable = "removable" in opts
+        is_sd_like = fstype in ("fat", "fat32", "exfat", "vfat", "ntfs")
         is_external_path = mount.startswith(("/media/", "/Volumes/", "/mnt/"))
-
-        if (is_removable or is_sd_like or is_external_path):
-            display_path = mount.rstrip(os.sep) + os.sep
-            if display_path not in [c[0] for c in candidates]:
-                try:
-                    free_gb = shutil.disk_usage(mount).free // (1024**3)
-                except:
-                    free_gb = 0
-                label = get_volume_label(mount)
-                candidates.append((display_path, free_gb, label))
-
+        if not (is_removable or is_external_path or is_sd_like):
+            continue
+        display_path = mount.rstrip(os.sep) + os.sep
+        if display_path in seen:
+            continue
+        seen.add(display_path)
+        try:
+            free_gb = shutil.disk_usage(mount).free // (1024 ** 3)
+        except OSError:
+            free_gb = 0
+        label = get_volume_label(mount)
+        score, reasons = _analogue_signature(mount, label)
+        candidates.append({
+            "path": display_path, "free_gb": free_gb, "label": label,
+            "removable": is_removable, "score": score, "reasons": reasons,
+        })
+    # Strongest signature first; then removable; then smaller drives (SD cards are small).
+    candidates.sort(key=lambda d: (d["score"], d["removable"], -d["free_gb"]), reverse=True)
     return candidates
 
+
+def _validate_root(path):
+    if not os.path.exists(path):
+        print(red("Error: that path doesn't exist."))
+        sys.exit(1)
+    if not os.access(path, os.W_OK):
+        print(red("Error: can't write to that path."))
+        sys.exit(1)
+    return path
+
+
 def select_sd_card():
-    print("\nLooking for SD cards / removable drives...")
+    print(dim("Scanning for the Analogue 3D SD card..."))
     drives = get_potential_sd_cards()
 
-    # Auto-pick a drive labeled "ANALOGUE 3D" if exactly one is found.
-    auto_picks = [d for d in drives if d[2].strip().upper() == ANALOGUE_VOLUME_LABEL]
-    if len(auto_picks) == 1:
-        path, free_gb, label = auto_picks[0]
-        print(f"Auto-detected Analogue 3D SD card: {path} [{label}] ({free_gb} GB free)")
-        confirm = input("Use this drive? [Y/n]: ").strip().lower()
+    # Auto-pick when exactly one drive has a strong Analogue 3D signature.
+    strong = [d for d in drives if d["score"] >= 4]
+    if len(strong) == 1:
+        d = strong[0]
+        label_str = f" [{d['label']}]" if d["label"] else ""
+        detail = f"{d['free_gb']} GB free - matched: {', '.join(d['reasons'])}"
+        print(green("Found your Analogue 3D card: ") + bold(d["path"]) + label_str +
+              " " + dim(f"({detail})"))
+        try:
+            confirm = input("Use this drive? [Y/n]: ").strip().lower()
+        except EOFError:
+            confirm = "y"
         if confirm in ("", "y", "yes"):
-            return path
+            return _validate_root(d["path"])
         print("OK, choose manually instead.")
 
-    if drives:
-        print("Found possible SD cards:")
-        for i, (path, free_gb, label) in enumerate(drives):
-            label_str = f" [{label}]" if label else ""
-            print(f"  {i+1}) {path}{label_str} ({free_gb} GB free)")
-        print("  0) Enter path manually")
+    # Show removable drives and anything with an Analogue signature; hide plain
+    # internal fixed drives (score 0) to keep the list uncluttered.
+    shown = [d for d in drives if d["removable"] or d["score"] > 0]
+    if shown:
+        print("\nDetected drives:")
+        for i, d in enumerate(shown, 1):
+            label_str = f" [{d['label']}]" if d["label"] else ""
+            free_str = dim(f"({d['free_gb']} GB free)")
+            internal = "" if d["removable"] else dim(" - internal")
+            tag = green("  <- looks like Analogue 3D") if d["score"] >= 4 else ""
+            print(f"  {bold(str(i))}) {d['path']}{label_str} {free_str}{internal}{tag}")
+        print(f"  {bold('0')}) Enter a path manually")
 
-        choice = input("\nSelect your SD card (number): ").strip()
+        default_hint = " " + dim("[Enter = 1]") if strong else ""
+        choice = input(f"\nSelect your SD card{default_hint}: ").strip()
+        if choice == "" and strong:
+            return _validate_root(shown[0]["path"])
         if choice == "0":
-            target_root = input("Enter full path to SD card root (e.g. E:\\ or /Volumes/NO_NAME/): ").strip()
+            target_root = input(r"Enter full path to SD card root (e.g. E:\ or /Volumes/NO_NAME/): ").strip()
         else:
             try:
-                target_root = drives[int(choice)-1][0]
-            except:
-                print("Invalid selection.")
+                target_root = shown[int(choice) - 1]["path"]
+            except (ValueError, IndexError):
+                print(red("Invalid selection."))
                 sys.exit(1)
     else:
-        print("No removable drives detected automatically.")
-        target_root = input("Enter full path to SD card root (e.g. E:\\ or /Volumes/NO_NAME/): ").strip()
+        print(yellow("No removable drives detected automatically."))
+        target_root = input(r"Enter full path to SD card root (e.g. E:\ or /Volumes/NO_NAME/): ").strip()
 
-    if not os.path.exists(target_root):
-        print("Error: Path doesn't exist.")
-        sys.exit(1)
-    if not os.access(target_root, os.W_OK):
-        print("Error: Cannot write to that path.")
-        sys.exit(1)
-
-    return target_root
+    return _validate_root(target_root)
 
 def install_firmware(target_root):
     print("\n=== Updating Analogue 3D Firmware ===")
@@ -357,30 +493,33 @@ def clean_backups():
     print(f"\nClean complete! {deleted} backup(s) deleted.")
 
 def main():
-    print("=================================================")
-    print("   Analogue 3D Complete Updater Tool – FINAL")
-    print("   Firmware ▪ Labels ▪ Backup ▪ Restore ▪ Clean")
-    print("=================================================\n")
-    
+    title = "  ANALOGUE 3D UTILITY  "
+    line = "+" + "-" * len(title) + "+"
+    print()
+    print(cyan(line))
+    print(cyan("|") + bold(title) + cyan("|"))
+    print(cyan(line))
+    print(dim("  Firmware  -  Labels  -  Backup  -  Restore  -  Controller") + "\n")
+
     while True:
-        print("What do you want to do?")
-        print("1) Install ALL (Firmware + Labels)")
-        print("2) Install Labels only")
-        print("3) Update Firmware only")
-        print("4) Create Backup (Library + Settings)")
-        print("5) Restore Backup")
-        print("6) Clean Backups (delete old backups)")
-        print("7) Update 8BitDo 64 Controller firmware (USB-C)")
-        print("0) Quit")
+        print(bold("What do you want to do?"))
+        print(f"  {cyan('1')})  Install ALL (Firmware + Labels)")
+        print(f"  {cyan('2')})  Install Labels only")
+        print(f"  {cyan('3')})  Update Firmware only")
+        print(f"  {cyan('4')})  Create Backup (Library + Settings)")
+        print(f"  {cyan('5')})  Restore Backup")
+        print(f"  {cyan('6')})  Clean Backups")
+        print(f"  {magenta('7')})  Update 8BitDo 64 Controller firmware (USB-C)")
+        print(f"  {dim('0')})  Quit")
 
-        choice = input("\nEnter choice (0-7): ").strip()
+        choice = input("\n" + bold("Enter choice (0-7): ")).strip()
 
-        if choice not in ["0","1","2","3","4","5","6","7"]:
-            print("Invalid choice, try again.\n")
+        if choice not in ["0", "1", "2", "3", "4", "5", "6", "7"]:
+            print(yellow("Invalid choice, try again.") + "\n")
             continue
 
         if choice == "0":
-            print("Goodbye! Enjoy your perfectly maintained Analogue 3D 🚀")
+            print(green("Goodbye! Enjoy your perfectly maintained Analogue 3D."))
             sys.exit(0)
 
         if choice == "6":
@@ -397,32 +536,25 @@ def main():
                     install_firmware(target_root)
                 if choice in ["1", "2"]:
                     install_labels(target_root)
-                print("\n🎉 Update tasks completed!")
-            
+                print(green("\nUpdate tasks completed!"))
+
             elif choice == "4":
                 create_backup(target_root)
-            
+
             elif choice == "5":
                 restore_backup(target_root)
-            
-            print("\nSafely eject your SD card when ready.")
+
+            print(dim("\nSafely eject your SD card when ready."))
             if choice in ["1", "3"]:
-                print("For firmware update: hold Pairing + Power on boot.")
+                print(dim("For firmware update: hold Pairing + Power on boot."))
         
         print()
-        again = input("Do another operation? (y/n): ").strip().lower()
+        again = input("\nDo another operation? (y/n): ").strip().lower()
         if again != "y":
-            print("All done! Your Analogue 3D is in perfect shape 🚀")
+            print(green("All done! Your Analogue 3D is in perfect shape."))
             break
-        print("\n" + "="*60 + "\n")
+        print("\n" + dim("=" * 60) + "\n")
+
 
 if __name__ == "__main__":
-    try:
-        import requests, bs4, psutil
-    except ImportError:
-        print("Missing required packages!")
-        print("Run: pip install requests beautifulsoup4 psutil hidapi")
-        print("(hidapi is only needed for option 7, the 8BitDo 64 controller update.)")
-        sys.exit(1)
-    
     main()
