@@ -74,6 +74,18 @@ def _ensure_dependencies():
 
 
 if __name__ == "__main__":
+    _args = sys.argv[1:]
+    if any(a in ("-h", "--help") for a in _args):
+        print("Analogue 3D Utility\n"
+              "  python a3d.py            Interactive arrow-key menu\n"
+              "  python a3d.py --auto     One-shot: back up + update firmware, art pack,\n"
+              "                           and all connected controllers, using defaults\n"
+              "  -y / --yes               Alias for --auto")
+        sys.exit(0)
     _ensure_dependencies()          # must run before importing the package (it needs requests/etc.)
-    from analogue3d.cli import main
-    main()
+    from analogue3d import cli, ui
+    if any(a in ("--auto", "-a", "--yes", "-y") for a in _args):
+        ui.ASSUME_YES = True
+        cli.run_auto()
+    else:
+        cli.main()

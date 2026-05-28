@@ -21,6 +21,8 @@ software, no driver swaps.
 > ```bash
 > python a3d.py
 > ```
+> Want it all in one shot? **`python a3d.py --auto`** backs up, updates firmware,
+> installs the art pack, and updates every connected controller — no prompts.
 
 ---
 

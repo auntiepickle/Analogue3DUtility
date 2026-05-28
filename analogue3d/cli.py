@@ -98,6 +98,13 @@ def _auto_all():
     ui.info("Safely eject the card. For the firmware update: hold Pairing + Power on boot.")
 
 
+def run_auto():
+    """One-shot, non-interactive run (the --auto flag): the full Auto flow with
+    defaults. Requires ui.ASSUME_YES so the prompts auto-answer."""
+    ui.banner()
+    _auto_all()
+
+
 def _advanced():
     while True:
         action = ui.select("Advanced", [

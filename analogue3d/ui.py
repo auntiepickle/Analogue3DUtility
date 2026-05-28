@@ -18,6 +18,10 @@ TEXT = "#E8E6F0"
 GREY = "#6E6A86"
 ERRC = "#FF5370"
 
+# Set by the `--auto` one-shot flag: answer prompts with their defaults so the
+# whole flow runs unattended.
+ASSUME_YES = False
+
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -182,6 +186,9 @@ def select(message, options, default=None):
 
 
 def confirm(message, default=True):
+    if ASSUME_YES:
+        print(f"{message} {'(yes)' if default else '(no)'}  [auto]")
+        return default
     if interactive():
         try:
             return bool(questionary.confirm(message, default=default,

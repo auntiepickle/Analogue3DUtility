@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 import psutil
 
 from .ui import bold, dim, green, yellow, red, ask
+from . import ui
 
 FIRMWARE_PAGE = "https://www.analogue.co/support/3d/firmware/latest"
 LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/latest/download/labels.db"
@@ -198,6 +199,17 @@ def select_sd_card():
 
     # Auto-pick when exactly one drive has a strong Analogue 3D signature.
     strong = [d for d in drives if d["score"] >= 4]
+
+    if ui.ASSUME_YES:  # --auto: no prompts
+        if len(strong) == 1:
+            d = strong[0]
+            label = f" [{d['label']}]" if d["label"] else ""
+            print(green("Auto: using ") + bold(d["path"]) + dim(label))
+            return _validate_root(d["path"])
+        print(red("Auto mode: " + ("no Analogue 3D SD card detected"
+              if not strong else "multiple Analogue 3D cards detected - can't auto-pick one")))
+        return None
+
     if len(strong) == 1:
         d = strong[0]
         label_str = f" [{d['label']}]" if d["label"] else ""
