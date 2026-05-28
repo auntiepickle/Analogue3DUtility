@@ -110,6 +110,28 @@ def green(t):   return _c(t, "92")
 def yellow(t):  return _c(t, "93")
 def red(t):     return _c(t, "91")
 def magenta(t): return _c(t, "95")
+def gold(t):    return _c(t, "33")
+
+
+def _glyph(unicode_char, ascii_fallback):
+    """Use a pretty unicode glyph only if the terminal encoding can render it."""
+    enc = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        unicode_char.encode(enc)
+        return unicode_char
+    except (UnicodeEncodeError, LookupError):
+        return ascii_fallback
+
+
+DOT = _glyph("●", "*")   # filled dot for status lines
+
+
+def _ask(prompt):
+    """input() that treats no-input/EOF as an empty (cancel-friendly) answer."""
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        return ""
 
 def get_latest_firmware_url():
     print("Fetching latest firmware info from Analogue...")
@@ -238,16 +260,25 @@ def get_potential_sd_cards():
 
 
 def _validate_root(path):
+    """Return the path if writable, else print why and return None (no exit)."""
     if not os.path.exists(path):
-        print(red("Error: that path doesn't exist."))
-        sys.exit(1)
+        print(red("That path doesn't exist."))
+        return None
     if not os.access(path, os.W_OK):
-        print(red("Error: can't write to that path."))
-        sys.exit(1)
+        print(red("Can't write to that path."))
+        return None
     return path
 
 
+def _manual_path():
+    path = _ask(r"Enter full path to SD card root (blank/q to cancel): ")
+    if path == "" or path.lower() in ("q", "quit"):
+        return None
+    return _validate_root(path)
+
+
 def select_sd_card():
+    """Pick the Analogue 3D SD card. Returns a path, or None if the user cancels."""
     print(dim("Scanning for the Analogue 3D SD card..."))
     drives = get_potential_sd_cards()
 
@@ -259,44 +290,43 @@ def select_sd_card():
         detail = f"{d['free_gb']} GB free - matched: {', '.join(d['reasons'])}"
         print(green("Found your Analogue 3D card: ") + bold(d["path"]) + label_str +
               " " + dim(f"({detail})"))
-        try:
-            confirm = input("Use this drive? [Y/n]: ").strip().lower()
-        except EOFError:
-            confirm = "y"
+        confirm = _ask("Use this drive? [Y/n] (q to cancel): ").lower()
         if confirm in ("", "y", "yes"):
             return _validate_root(d["path"])
+        if confirm in ("q", "quit"):
+            return None
         print("OK, choose manually instead.")
 
     # Show removable drives and anything with an Analogue signature; hide plain
     # internal fixed drives (score 0) to keep the list uncluttered.
     shown = [d for d in drives if d["removable"] or d["score"] > 0]
-    if shown:
-        print("\nDetected drives:")
-        for i, d in enumerate(shown, 1):
-            label_str = f" [{d['label']}]" if d["label"] else ""
-            free_str = dim(f"({d['free_gb']} GB free)")
-            internal = "" if d["removable"] else dim(" - internal")
-            tag = green("  <- looks like Analogue 3D") if d["score"] >= 4 else ""
-            print(f"  {bold(str(i))}) {d['path']}{label_str} {free_str}{internal}{tag}")
-        print(f"  {bold('0')}) Enter a path manually")
-
-        default_hint = " " + dim("[Enter = 1]") if strong else ""
-        choice = input(f"\nSelect your SD card{default_hint}: ").strip()
-        if choice == "" and strong:
-            return _validate_root(shown[0]["path"])
-        if choice == "0":
-            target_root = input(r"Enter full path to SD card root (e.g. E:\ or /Volumes/NO_NAME/): ").strip()
-        else:
-            try:
-                target_root = shown[int(choice) - 1]["path"]
-            except (ValueError, IndexError):
-                print(red("Invalid selection."))
-                sys.exit(1)
-    else:
+    if not shown:
         print(yellow("No removable drives detected automatically."))
-        target_root = input(r"Enter full path to SD card root (e.g. E:\ or /Volumes/NO_NAME/): ").strip()
+        return _manual_path()
 
-    return _validate_root(target_root)
+    print("\nDetected drives:")
+    for i, d in enumerate(shown, 1):
+        label_str = f" [{d['label']}]" if d["label"] else ""
+        free_str = dim(f"({d['free_gb']} GB free)")
+        internal = "" if d["removable"] else dim(" - internal")
+        tag = green("  <- looks like Analogue 3D") if d["score"] >= 4 else ""
+        print(f"  {bold(str(i))})  {d['path']}{label_str} {free_str}{internal}{tag}")
+    print(f"  {bold('m')})  Enter a path manually")
+    print(f"  {bold('q')})  Cancel (back to menu)")
+
+    default_hint = " " + dim("[Enter = 1]") if strong else ""
+    choice = _ask(f"\nSelect your SD card{default_hint}: ").lower()
+    if choice in ("q", "quit"):
+        return None
+    if choice == "" and strong:
+        return _validate_root(shown[0]["path"])
+    if choice == "m":
+        return _manual_path()
+    try:
+        return _validate_root(shown[int(choice) - 1]["path"])
+    except (ValueError, IndexError):
+        print(red("Invalid selection."))
+        return None
 
 def install_firmware(target_root):
     print("\n=== Updating Analogue 3D Firmware ===")
@@ -401,18 +431,22 @@ def restore_backup(target_root):
     for i, backup in enumerate(backups):
         path = os.path.join(backup_dir, backup)
         size_mb = os.path.getsize(path) // (1024**1024)
-        print(f"  {i+1}) {backup} ({size_mb} MB)")
-    
-    choice = input("\nSelect backup to restore (number): ").strip()
+        print(f"  {bold(str(i+1))})  {backup} ({size_mb} MB)")
+    print(f"  {bold('0')})  Cancel (back to menu)")
+
+    choice = _ask("\nSelect backup to restore (0 to cancel): ")
+    if choice in ("", "0", "q", "quit"):
+        print("Cancelled.")
+        return
     try:
         selected_backup = backups[int(choice) - 1]
-    except:
-        print("Invalid selection.")
+    except (ValueError, IndexError):
+        print(red("Invalid selection."))
         return
-    
+
     backup_path = os.path.join(backup_dir, selected_backup)
-    
-    confirm = input(f"\nWARNING: This will OVERWRITE all files in Library/Settings folders!\nType YES to continue: ").strip()
+
+    confirm = _ask("\nWARNING: This will OVERWRITE all files in Library/Settings folders!\nType YES to continue (anything else cancels): ")
     if confirm != "YES":
         print("Restore cancelled.")
         return
@@ -492,35 +526,52 @@ def clean_backups():
     
     print(f"\nClean complete! {deleted} backup(s) deleted.")
 
+def _sd_status_line():
+    try:
+        strong = [d for d in get_potential_sd_cards() if d["score"] >= 4]
+    except Exception:
+        strong = []
+    if len(strong) == 1:
+        d = strong[0]
+        label = f" [{d['label']}]" if d["label"] else ""
+        return green(f"  {DOT} SD card: ") + bold(d["path"]) + dim(label)
+    if strong:
+        return yellow(f"  {DOT} SD card: multiple Analogue 3D cards detected")
+    return dim(f"  {DOT} SD card: not detected (you can still enter a path manually)")
+
+
 def main():
     title = "  ANALOGUE 3D UTILITY  "
-    line = "+" + "-" * len(title) + "+"
+    bar = "+" + "-" * len(title) + "+"
     print()
-    print(cyan(line))
-    print(cyan("|") + bold(title) + cyan("|"))
-    print(cyan(line))
-    print(dim("  Firmware  -  Labels  -  Backup  -  Restore  -  Controller") + "\n")
+    print(gold(bar))
+    print(gold("|") + bold(gold(title)) + gold("|"))
+    print(gold(bar))
 
     while True:
-        print(bold("What do you want to do?"))
-        print(f"  {cyan('1')})  Install ALL (Firmware + Labels)")
-        print(f"  {cyan('2')})  Install Labels only")
-        print(f"  {cyan('3')})  Update Firmware only")
-        print(f"  {cyan('4')})  Create Backup (Library + Settings)")
-        print(f"  {cyan('5')})  Restore Backup")
-        print(f"  {cyan('6')})  Clean Backups")
-        print(f"  {magenta('7')})  Update 8BitDo 64 Controller firmware (USB-C)")
-        print(f"  {dim('0')})  Quit")
+        print()
+        print(_sd_status_line())
+        print()
+        print(bold("  SD CARD"))
+        print(f"    {cyan('1')}  Install everything (firmware + labels)")
+        print(f"    {cyan('2')}  Install labels only")
+        print(f"    {cyan('3')}  Update firmware only")
+        print(f"    {cyan('4')}  Create backup")
+        print(f"    {cyan('5')}  Restore backup")
+        print(f"    {cyan('6')}  Clean backups")
+        print(bold("  CONTROLLER"))
+        print(f"    {magenta('7')}  Update 8BitDo 64 controller (USB-C)")
+        print()
+        print(f"    {dim('0')}  Quit")
 
-        choice = input("\n" + bold("Enter choice (0-7): ")).strip()
+        choice = _ask("\n" + bold("Choose an option: ")).lower()
 
-        if choice not in ["0", "1", "2", "3", "4", "5", "6", "7"]:
-            print(yellow("Invalid choice, try again.") + "\n")
+        if choice in ("0", "q", "quit"):
+            print(green("\nDone. Enjoy your Analogue 3D."))
+            return
+        if choice not in ("1", "2", "3", "4", "5", "6", "7"):
+            print(yellow("Please enter a number from the menu."))
             continue
-
-        if choice == "0":
-            print(green("Goodbye! Enjoy your perfectly maintained Analogue 3D."))
-            sys.exit(0)
 
         if choice == "6":
             clean_backups()
@@ -528,32 +579,28 @@ def main():
             import eightbitdo_64_updater
             eightbitdo_64_updater.run_interactive()
         else:
-            # All other options need the SD card
             target_root = select_sd_card()
-            
-            if choice in ["1", "2", "3"]:
-                if choice in ["1", "3"]:
+            if target_root is None:
+                print(dim("Cancelled - back to menu."))
+                print("\n" + dim("-" * 60))
+                continue
+
+            if choice in ("1", "2", "3"):
+                if choice in ("1", "3"):
                     install_firmware(target_root)
-                if choice in ["1", "2"]:
+                if choice in ("1", "2"):
                     install_labels(target_root)
                 print(green("\nUpdate tasks completed!"))
-
+                if choice in ("1", "3"):
+                    print(dim("For the firmware update: hold Pairing + Power on boot."))
             elif choice == "4":
                 create_backup(target_root)
-
             elif choice == "5":
                 restore_backup(target_root)
 
             print(dim("\nSafely eject your SD card when ready."))
-            if choice in ["1", "3"]:
-                print(dim("For firmware update: hold Pairing + Power on boot."))
-        
-        print()
-        again = input("\nDo another operation? (y/n): ").strip().lower()
-        if again != "y":
-            print(green("All done! Your Analogue 3D is in perfect shape."))
-            break
-        print("\n" + dim("=" * 60) + "\n")
+
+        print("\n" + dim("-" * 60))
 
 
 if __name__ == "__main__":

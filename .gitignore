@@ -1,2 +1,14 @@
-a3d_os_01_01_09.bin
-backups/*
+# Python
+__pycache__/
+*.pyc
+
+# Downloaded / generated firmware artifacts (re-downloaded on demand)
+a3d_os_*.bin
+download
+*.dat
+
+# Backups created by the tool
+backups/
+
+# Local editor / Claude Code config
+.claude/

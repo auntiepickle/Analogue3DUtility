@@ -42,12 +42,7 @@ Think of it as the spiritual successor to PocketSync, but for the Analogue 3D
 git clone https://github.com/auntiepickle/Analogue3DUtility.git
 cd Analogue3DUtility
 
-# 2. (Recommended) use a virtual environment
-python -m venv .venv
-# Windows:        .venv\Scripts\activate
-# macOS / Linux:  source .venv/bin/activate
-
-# 3. Run it (it installs its own dependencies the first time)
+# 2. Run it (it installs its own dependencies the first time)
 python analogue3d_firmware_updater.py
 ```
 
@@ -56,10 +51,6 @@ Then pick what you want from the menu. That's it.
 On first launch the script checks for the packages it needs and offers to
 `pip install` them for you, so you don't have to install anything by hand. If you'd
 rather install them yourself up front, run `pip install -r requirements.txt`.
-
-> **Don't want a virtual environment?** Skip step 2 and just run the script against
-> your system Python — the venv simply keeps these packages from mixing with
-> everything else.
 
 ### Requirements
 
