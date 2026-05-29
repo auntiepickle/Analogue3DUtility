@@ -26,7 +26,8 @@ from . import config, ui
 
 MEM_SUBPATH = ("Memories", "N64")
 DEFAULT_KEEP = 5    # default number of newest save states to keep when trimming
-CONSOLE_CAP = 20    # the console's per-game save-state limit (for "at the cap" hints)
+                    # (the console itself culls each game at 20, so this is just
+                    # about keeping fewer/smaller backups, not enforcing a limit)
 
 _ID_RE = re.compile(r"([0-9a-fA-F]{8})\s*$")
 _TS_RE = re.compile(r"(\d{14})\.png$", re.IGNORECASE)
@@ -351,5 +352,5 @@ __all__ = [
     "find_game_states", "find_game", "memories_dir", "thumbnail",
     "archive_all", "list_snapshots", "snapshot_games", "restore_snapshot",
     "delete_snapshot", "trim_to_latest", "delete_state", "run_interactive",
-    "DEFAULT_KEEP", "CONSOLE_CAP",
+    "DEFAULT_KEEP",
 ]
