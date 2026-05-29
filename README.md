@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.7.0-F4CD01?labelColor=0a0a0a" alt="Version 0.7.0">
+  <img src="https://img.shields.io/badge/version-0.6.1-F4CD01?labelColor=0a0a0a" alt="Version 0.6.1">
   <img src="https://img.shields.io/badge/python-3.7%2B-F4CD01?labelColor=0a0a0a" alt="Python 3.7+">
   <img src="https://img.shields.io/badge/platforms-Windows%20·%20macOS%20·%20Linux-4ade80?labelColor=0a0a0a" alt="Platforms">
   <img src="https://img.shields.io/badge/UI-arrow--key%20terminal-F4CD01?labelColor=0a0a0a" alt="Arrow-key terminal UI">
