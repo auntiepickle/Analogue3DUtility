@@ -9,10 +9,7 @@
   <line x1="20" y1="54" x2="800" y2="54" stroke="#262626" stroke-width="2"/>
 
   <!-- title bar -->
-  <circle cx="46" cy="36" r="5" fill="#F4CD01"/>
-  <circle cx="66" cy="36" r="5" fill="#464646"/>
-  <circle cx="86" cy="36" r="5" fill="#464646"/>
-  <text x="108" y="41" font-family="Consolas,'SF Mono',Menlo,monospace" font-size="14" fill="#6e6e6e">a3d.py</text>
+  <text x="44" y="41" font-family="Consolas,'SF Mono',Menlo,monospace" font-size="14" fill="#6e6e6e">a3d.py</text>
 
   <!-- shell prompt line -->
   <text x="52" y="88" font-family="Consolas,'SF Mono',Menlo,monospace" font-size="15" font-weight="bold">
