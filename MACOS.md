@@ -88,8 +88,7 @@ These are about the SD card, not Gatekeeper:
 - **Backup says 0 MB / looks empty.** Some Mac card readers cause the tool to miss
   the `Library` / `Settings` / `Memories` folders. The tool now probes for them
   directly and reports the real backup size, warning you if it's suspiciously
-  small. If you still get a tiny backup: re-seat the card, try a different reader,
-  and don't use the console's own USB "SD Card" mode for the backup.
+  small. If you still get a tiny backup, re-seat the card or try a different reader.
 - **`[Errno 30] Read-only file system`.** macOS mounted the card read-only (common
   after a filesystem hiccup or with flaky readers). The tool now catches this and
   tells you instead of crashing. Fix: safely eject and re-insert the card, run

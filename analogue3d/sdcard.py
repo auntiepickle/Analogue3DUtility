@@ -276,8 +276,7 @@ def _readonly_message(path):
         "On macOS this usually means:\n"
         "  - The card got remounted read-only after an error: safely eject it,\n"
         "    wait a few seconds, and re-insert it (or try a different reader).\n"
-        "  - Run First Aid on the card in Disk Utility if it keeps happening.\n"
-        "  - Don't put the console itself in USB 'SD Card' mode for writes."
+        "  - Run First Aid on the card in Disk Utility if it keeps happening."
     )
 
 
@@ -416,8 +415,7 @@ def create_backup(target_root, label=None):
         print(green(f"Backup created successfully!  ({size:,} bytes, {size / (1024 * 1024):.2f} MB)"))
         if size < 100 * 1024:
             print(yellow("Warning: this backup is very small (< 100 KB) - the expected folders "
-                         "may not have been found. On macOS this can happen with certain card "
-                         "readers or if the console is in USB 'SD Card' mode."))
+                         "may not have been found. On macOS this can happen with certain card readers."))
     except OSError:
         print(green("Backup created successfully!"))
     print(f"Location: {backup_path}")
