@@ -90,23 +90,19 @@ def _swap_and_restart_windows(exe, new_file):
                      close_fds=True, env=_clean_child_env())
 
 
-def _swap_and_restart_posix(exe, new_file):
-    """macOS/Linux: the build is a single-file binary (not a .app bundle). Wait for
-    this process to exit, move the new file over the old one, make it executable,
-    and relaunch it detached."""
-    pid = os.getpid()
-    fd, sh = tempfile.mkstemp(suffix=".sh")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(
-            "#!/bin/sh\n"
-            f'while kill -0 {pid} 2>/dev/null; do sleep 1; done\n'
-            f'mv "{new_file}" "{exe}"\n'
-            f'chmod +x "{exe}"\n'
-            f'"{exe}" &\n'
-            'rm -f "$0"\n'
-        )
-    os.chmod(sh, 0o755)
-    subprocess.Popen(["/bin/sh", sh], close_fds=True, env=_clean_child_env())
+def _swap_and_relaunch_posix(exe, new_file):
+    """macOS/Linux: the build is a single-file binary, and POSIX lets us replace a
+    running executable's path in place (the running process keeps its open inode).
+    Swap the new file over the old one and re-exec into it. Re-exec (not a detached
+    relaunch) keeps the SAME process and controlling terminal in the foreground - a
+    backgrounded interactive CLI would be stopped by SIGTTIN on its first input.
+    Does not return on success: os.execve replaces this process image."""
+    os.replace(new_file, exe)
+    os.chmod(exe, os.stat(exe).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    sys.stdout.write("\n")  # finish the download-progress line before the new banner
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execve(exe, [exe], _clean_child_env())
 
 
 def self_update(progress=None):
@@ -132,9 +128,7 @@ def self_update(progress=None):
         if sys.platform == "win32":
             _swap_and_restart_windows(exe, new_file)
         else:
-            os.chmod(new_file, os.stat(new_file).st_mode
-                     | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            _swap_and_restart_posix(exe, new_file)
+            _swap_and_relaunch_posix(exe, new_file)  # re-execs; does not return on success
     except Exception as e:
         try:
             if os.path.exists(new_file):
