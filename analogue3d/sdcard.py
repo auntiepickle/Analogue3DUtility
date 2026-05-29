@@ -23,9 +23,10 @@ LABELS_DB_URL = "https://github.com/retrogamecorps/Analogue-3D-Images/releases/l
 LABELS_DB_FILENAME = "labels.db"
 ANALOGUE_VOLUME_LABEL = "ANALOGUE 3D"
 
-# Known community label-database sources. Add more (name, url) as they appear.
+# Known label-database sources. Add more (name, url) as they appear.
+# Default art is the excellent pack maintained by RetroGameCorps.
 LABEL_SOURCES = [
-    ("RetroGameCorps community labels (default)", LABELS_DB_URL),
+    ("RetroGameCorps cartridge art pack (default)", LABELS_DB_URL),
 ]
 
 
@@ -292,7 +293,7 @@ def install_firmware(target_root):
 
 def install_labels(target_root, source=None):
     """Install a cartridge art pack (labels.db). `source` may be a URL or a path
-    to a local labels.db file you've assembled; defaults to the community pack."""
+    to a local labels.db file you've assembled; defaults to the RetroGameCorps pack."""
     print("\n=== Installing Cartridge Art Pack ===")
     src = source or LABELS_DB_URL
     if os.path.isfile(src):
@@ -307,16 +308,6 @@ def install_labels(target_root, source=None):
     dest_path = os.path.join(labels_dir, LABELS_DB_FILENAME)
     print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
     shutil.copy(local_labels_path, dest_path)
-
-    # Re-apply the user's custom-art overrides on top of the freshly-installed
-    # base pack, so installing a pack never blows away their custom cart art.
-    try:
-        from . import labels
-        n = labels.apply_overrides(dest_path)
-        if n:
-            print(green(f"Re-applied {n} custom cartridge art override(s)."))
-    except Exception:
-        pass
 
     print(green("Cartridge art pack installed - your cart art will now show."))
 
@@ -379,6 +370,31 @@ def create_backup(target_root, label=None):
     
     print(f"Backup created successfully!")
     print(f"Location: {backup_path}")
+
+
+BACKUP_PREFIX = "analogue3d_backup_"
+_BACKUP_STAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")
+
+
+def rename_backup(name, new_label):
+    """Relabel a backup by rewriting the tag after its timestamp. Empty label
+    strips the tag. Returns the new filename, or None if the backup is missing."""
+    backup_dir = config.backup_dir("backups")
+    path = os.path.join(backup_dir, os.path.basename(name))
+    if not os.path.isfile(path):
+        return None
+    m = _BACKUP_STAMP_RE.search(name)
+    if not m:
+        return None
+    tag = sanitize_label(new_label)
+    new_name = f"{BACKUP_PREFIX}{m.group(1)}{('_' + tag) if tag else ''}.zip"
+    new_path = os.path.join(backup_dir, new_name)
+    if new_path != path:
+        if os.path.exists(new_path):
+            raise FileExistsError(f"A backup named {new_name} already exists.")
+        os.replace(path, new_path)
+    return new_name
+
 
 def restore_backup(target_root):
     print("\n=== Restore Backup ===")

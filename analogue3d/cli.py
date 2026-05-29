@@ -8,7 +8,7 @@ import os
 
 import requests
 
-from . import sdcard, controller, labels, saves, savestates, config, ui
+from . import sdcard, controller, labels, saves, savestates, config, ui, updates
 
 
 def _status():
@@ -28,16 +28,21 @@ def _status():
 
 
 def _art_pack_flow(root):
-    src = ui.select("Which cartridge art pack?", [
-        ("RetroGameCorps community pack (download latest)", "community"),
+    opts = [("RetroGameCorps cartridge art pack (download latest)", "community")]
+    if labels.has_custom_pack():
+        opts.append(("My custom labels (your saved pack)", "mycustom"))
+    opts += [
         ("A labels.db file I already have", "file"),
         ("A custom URL", "url"),
         ("Cancel", "cancel"),
-    ])
+    ]
+    src = ui.select("Which cartridge art pack?", opts)
     if src in (None, "cancel"):
         return
     if src == "community":
-        source = None  # install_labels defaults to the community pack URL
+        source = None  # install_labels defaults to the RetroGameCorps pack URL
+    elif src == "mycustom":
+        source = labels.custom_pack_path()
     elif src == "file":
         source = ui.text("Path to your labels.db file:").strip('"')
         if not source or not os.path.isfile(source):
@@ -61,7 +66,10 @@ def _auto_all():
     ui.info("This will, for every part that applies:")
     print(f"   {ui.DOT} Back up the SD card")
     print(f"   {ui.DOT} Update the console firmware")
-    print(f"   {ui.DOT} Install the community cartridge art pack")
+    if labels.has_custom_pack():
+        print(f"   {ui.DOT} Install your custom cartridge art pack")
+    else:
+        print(f"   {ui.DOT} Install the RetroGameCorps cartridge art pack")
     if n_controllers == 1:
         print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.green("(detected)"))
     elif n_controllers > 1:
@@ -77,7 +85,8 @@ def _auto_all():
         sdcard.create_backup(root)
         if not sdcard.install_firmware(root):
             ui.warn("Firmware step didn't complete - check your connection.")
-        sdcard.install_labels(root)
+        sdcard.install_labels(
+            root, labels.custom_pack_path() if labels.has_custom_pack() else None)
     except (requests.RequestException, OSError) as e:
         ui.err(f"Auto update stopped during SD tasks: {e}")
         return
@@ -149,8 +158,22 @@ def _settings_flow():
         ui.rule()
 
 
+def _update_notice():
+    """One dim line if a newer release of this tool is out (cached, fails silent)."""
+    try:
+        from . import __version__
+        info = updates.check(__version__, updates.CLI_REPO)
+    except Exception:
+        return
+    if info and info.get("update_available"):
+        ui.warn(f"  {ui.DOT} Update available: v{info['latest']} "
+                f"(you have v{info['current']})")
+        ui.info(f"     {info['url']}")
+
+
 def main():
     ui.banner()
+    _update_notice()
     while True:
         _status()
         action = ui.select("What would you like to do?", [

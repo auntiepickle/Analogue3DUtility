@@ -15,6 +15,7 @@ sorted entry if the cart isn't present yet).
 """
 
 import os
+import json
 import struct
 import zlib
 import shutil
@@ -124,12 +125,10 @@ def image_to_slot(image_path):
     return bytes(bgra) + b"\xff" * PAD
 
 
-def set_label(db_path, cart_id_hex, image_path):
-    """Write a custom image for cart_id into labels.db (overwrite or sorted insert)."""
-    cart_id = int(cart_id_hex, 16)
-    slot = image_to_slot(image_path)
+def _insert_or_update_slot(db_path, cart_id, slot):
+    """Write a 25600-byte slot for cart_id: overwrite if present, else sorted insert.
+    Returns 'updated' or 'inserted'."""
     ids = read_ids(db_path)
-
     if cart_id in ids:
         index = ids.index(cart_id)
         with open(db_path, "r+b") as f:
@@ -163,56 +162,181 @@ def set_label(db_path, cart_id_hex, image_path):
     return "inserted"
 
 
-# --- custom-art overrides (so your art survives a base-pack re-install) ---
-def overrides_dir():
-    return config.backup_dir("art_overrides")
+def _read_slot(db_path, cart_id):
+    """Raw 25600-byte slot for cart_id from a labels.db, or None if absent."""
+    ids = read_ids(db_path)
+    if cart_id not in ids:
+        return None
+    index = ids.index(cart_id)
+    with open(db_path, "rb") as f:
+        f.seek(DATA_START + index * SLOT_SIZE)
+        slot = f.read(SLOT_SIZE)
+    return slot if len(slot) == SLOT_SIZE else None
 
 
-def _is_hex8(s):
-    return len(s) == 8 and all(c in "0123456789abcdef" for c in s.lower())
+def label_matches(db_a, db_b, cart_id_hex):
+    """True if both labels.db files hold the identical image slot for a cart -
+    used to tell whether a cart's custom art is actually live on the card."""
+    try:
+        cid = int(cart_id_hex, 16)
+    except (TypeError, ValueError):
+        return False
+    try:
+        a = _read_slot(db_a, cid)
+    except OSError:
+        return False
+    if a is None:
+        return False
+    try:
+        b = _read_slot(db_b, cid)
+    except OSError:
+        return False
+    return a == b
 
 
-def list_overrides():
-    """{cart_id: image_path} of the user's stored custom-art overrides."""
-    d = overrides_dir()
-    out = {}
-    if not os.path.isdir(d):
-        return out
-    for f in os.listdir(d):
-        stem = os.path.splitext(f)[0].lower()
-        if _is_hex8(stem):
-            out[stem] = os.path.join(d, f)
-    return out
+def set_label(db_path, cart_id_hex, image_path):
+    """Write a custom image for cart_id into labels.db (overwrite or sorted insert)."""
+    cart_id = int(cart_id_hex, 16)
+    return _insert_or_update_slot(db_path, cart_id, image_to_slot(image_path))
 
 
-def save_override(cart_id_hex, image_path):
-    """Store the original image for a cart so it can be re-applied after any
-    base-pack install (re-downscaled fresh each time)."""
-    cart_id_hex = cart_id_hex.lower()
-    d = overrides_dir()
-    os.makedirs(d, exist_ok=True)
-    for cid, p in list_overrides().items():   # replace any prior override for this cart
-        if cid == cart_id_hex:
+def remove_label(db_path, cart_id_hex):
+    """Remove a cart's entry + image slot from labels.db. True if it was present."""
+    cart_id = int(cart_id_hex, 16)
+    ids = read_ids(db_path)
+    if cart_id not in ids:
+        return False
+    index = ids.index(cart_id)
+    new_ids = ids[:index] + ids[index + 1:]
+    with open(db_path, "rb") as f:
+        header = f.read(HEADER_LEN)
+        f.seek(DATA_START)
+        slots = f.read(len(ids) * SLOT_SIZE)
+    table = bytearray(b"\xff" * ID_TABLE_BYTES)
+    if new_ids:
+        struct.pack_into("<" + "I" * len(new_ids), table, 0, *new_ids)
+    new_data = slots[:index * SLOT_SIZE] + slots[(index + 1) * SLOT_SIZE:]
+    tmp = db_path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(header)
+        f.write(table)
+        f.write(new_data)
+    os.replace(tmp, db_path)
+    return True
+
+
+def _community_cache_path():
+    return os.path.join(os.path.dirname(config.config_path()), "community_labels.db")
+
+
+def community_cache():
+    """Path to the cached community pack if already downloaded, else None. Never
+    downloads - safe for cheap preview reads."""
+    p = _community_cache_path()
+    return p if os.path.isfile(p) else None
+
+
+def community_db():
+    """Local cached copy of the community (RetroGameCorps) labels.db, downloading
+    it once into the app dir. Returns the path, or None if the download fails."""
+    from . import sdcard
+    dest = _community_cache_path()
+    if not os.path.isfile(dest):
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        # download to a .tmp and atomically promote it, so a dropped connection
+        # never leaves a truncated file that we'd treat as a valid cache forever
+        tmp = dest + ".tmp"
+        try:
+            sdcard.download_file(sdcard.LABELS_DB_URL,
+                                 dest_folder=os.path.dirname(dest),
+                                 filename=os.path.basename(tmp))
+            os.replace(tmp, dest)
+        except Exception:
             try:
-                os.remove(p)
+                if os.path.isfile(tmp):
+                    os.remove(tmp)
             except OSError:
                 pass
-    ext = os.path.splitext(image_path)[1].lower() or ".png"
-    dest = os.path.join(d, cart_id_hex + ext)
-    shutil.copy2(image_path, dest)
+            return None
+    return dest if os.path.isfile(dest) else None
+
+
+def reset_label(db_path, cart_id_hex):
+    """Drop a cart's custom override: restore the community art for it if the
+    community pack has it, else remove the slot entirely. Returns 'reverted',
+    'removed', or None if the cart had no entry to begin with."""
+    cart_id = int(cart_id_hex, 16)
+    if cart_id not in read_ids(db_path):
+        return None
+    comm = community_db()
+    slot = _read_slot(comm, cart_id) if comm else None
+    if slot is not None:
+        _insert_or_update_slot(db_path, cart_id, slot)
+        return "reverted"
+    remove_label(db_path, cart_id_hex)
+    return "removed"
+
+
+# --- the user's own "My custom labels" pack -------------------------------
+# Setting custom art edits the card's labels.db and snapshots it here, so it's
+# selectable as its own source and used as Auto's default. Installing the plain
+# RetroGameCorps pack stays clean (no overrides forced on), so reverting works.
+def custom_pack_path():
+    """Local path of the user's own labels.db (their pack with custom art)."""
+    return config.backup_dir("custom_labels.db")
+
+
+def has_custom_pack():
+    return os.path.isfile(custom_pack_path())
+
+
+def save_custom_pack(src_db_path):
+    """Snapshot the just-customized labels.db as the user's own selectable pack
+    (becomes the 'My custom labels' source + Auto's default)."""
+    if not os.path.isfile(src_db_path):
+        return None
+    dest = custom_pack_path()
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copy2(src_db_path, dest)
     return dest
 
 
-def apply_overrides(db_path):
-    """Re-apply every stored override into labels.db. Returns how many applied."""
-    n = 0
-    for cart_id, image_path in list_overrides().items():
-        try:
-            set_label(db_path, cart_id, image_path)
-            n += 1
-        except (ValueError, OSError):
-            pass
-    return n
+# Which carts the user has personally overridden. Tracked explicitly (recorded on
+# set, removed on revert) so the UI can show a "Revert" only on carts you changed,
+# not on every stock cart.
+def _overrides_path():
+    return custom_pack_path() + ".overrides.json"
+
+
+def overridden_carts():
+    """Set of 8-hex cart IDs the user has applied custom art to."""
+    try:
+        with open(_overrides_path(), encoding="utf-8") as f:
+            return {str(c).lower() for c in json.load(f)}
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_overrides(ids):
+    p = _overrides_path()
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(sorted(ids), f)
+    except OSError:
+        pass
+
+
+def mark_override(cart_id_hex):
+    ids = overridden_carts()
+    ids.add(str(cart_id_hex).lower())
+    _save_overrides(ids)
+
+
+def unmark_override(cart_id_hex):
+    ids = overridden_carts()
+    ids.discard(str(cart_id_hex).lower())
+    _save_overrides(ids)
 
 
 def run_interactive(sd_root):
@@ -255,15 +379,19 @@ def run_interactive(sd_root):
 
     try:
         result = set_label(db_path, cart_id, image_path)
-        save_override(cart_id, image_path)  # keep it across future art-pack installs
+        save_custom_pack(db_path)
+        mark_override(cart_id)
     except (ValueError, OSError) as e:
         print(red(f"Failed: {e}"))
         return
     verb = "Updated" if result == "updated" else "Added"
     print(green(f"{verb} artwork for cart {cart_id}. It'll show on the console next boot."))
-    print(dim("Saved as a custom override - it'll be re-applied if you reinstall an art pack."))
+    print(dim("Saved into your 'My custom labels' pack (selectable when installing art)."))
 
 
 __all__ = ["compute_cart_id", "read_ids", "read_label_image", "image_to_slot",
-           "set_label", "convert_to_z64", "have_pillow", "run_interactive",
-           "overrides_dir", "list_overrides", "save_override", "apply_overrides"]
+           "set_label", "remove_label", "reset_label", "community_db",
+           "community_cache", "label_matches",
+           "convert_to_z64", "have_pillow", "run_interactive",
+           "custom_pack_path", "has_custom_pack", "save_custom_pack",
+           "overridden_carts", "mark_override", "unmark_override"]
