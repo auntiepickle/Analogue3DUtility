@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "analogue3d"
-version = "0.6.1"
+version = "0.6.2"
 description = "Engine + CLI for the Analogue 3D: console firmware, cartridge art packs, save backups, and 8BitDo 64 controller flashing."
 readme = "README.md"
 requires-python = ">=3.7"

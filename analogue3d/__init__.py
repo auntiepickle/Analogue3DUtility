@@ -5,4 +5,4 @@ import-light (this __init__ pulls in nothing heavy) so the launcher can bootstra
 dependencies before any submodule imports requests/psutil/etc.
 """
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"
