@@ -28,14 +28,17 @@ jobs:
             label: windows
             ext: ".exe"
             asset: a3d-windows.exe
+            iconarg: "--icon assets/icon.ico"
           - os: macos-latest
             label: macos
             ext: ""
             asset: a3d-macos
+            iconarg: ""
           - os: ubuntu-latest
             label: linux
             ext: ""
             asset: a3d-linux
+            iconarg: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +54,7 @@ jobs:
       - name: Build one-file binary
         run: >
           pyinstaller --onefile --name a3d
+          ${{ matrix.iconarg }}
           --collect-submodules analogue3d
           --collect-all rich
           --collect-all questionary
