@@ -2,13 +2,13 @@
 #
 # macOS launch helper for the Analogue 3D Utility binary (a3d-macos).
 #
-# The pre-built binary is unsigned, so macOS quarantines it when you download it
-# in a browser. This script clears the quarantine flag and makes it executable.
-# It does NOT bypass Gatekeeper - on first run you may still need to approve it
-# once in System Settings > Privacy & Security.
+# RECOVERY TOOL: this is mainly useful if you already downloaded the binary in a
+# browser (which quarantines it). The easier path is to download with `curl`,
+# which doesn't quarantine the file at all - then you don't need this. See MACOS.md.
 #
-# Tip: if you download with `curl` instead of a browser, the file is never
-# quarantined and you don't need this script at all. See MACOS.md.
+# It clears the quarantine flag and makes the binary executable. It does NOT
+# bypass Gatekeeper - you may still need to approve it once in
+# System Settings > Privacy & Security on first run.
 #
 # Usage:
 #   chmod +x macos-launch-helper.sh
