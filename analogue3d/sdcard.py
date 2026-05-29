@@ -390,6 +390,8 @@ def rename_backup(name, new_label):
     new_name = f"{BACKUP_PREFIX}{m.group(1)}{('_' + tag) if tag else ''}.zip"
     new_path = os.path.join(backup_dir, new_name)
     if new_path != path:
+        if os.path.exists(new_path):
+            raise FileExistsError(f"A backup named {new_name} already exists.")
         os.replace(path, new_path)
     return new_name
 

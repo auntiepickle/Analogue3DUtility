@@ -246,6 +246,8 @@ def rename_snapshot(name, new_label):
     new_name = f"{SNAPSHOT_PREFIX}{m.group(1)}{('_' + tag) if tag else ''}.zip"
     new_path = _snapshot_path(new_name)
     if new_path != path:
+        if os.path.exists(new_path):
+            raise FileExistsError(f"A snapshot named {new_name} already exists.")
         os.replace(path, new_path)
     return new_name
 

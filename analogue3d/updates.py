@@ -22,10 +22,22 @@ _NUM_RE = re.compile(r"\d+")
 
 
 def parse_version(s):
-    """'v0.6.1' / '0.6.1' -> (0, 6, 1). Non-numeric chunks are ignored."""
+    """'v0.6.1' / '0.6.1' -> (0, 6, 1). A pre-release/build suffix ('-rc1', '+x')
+    is dropped so '1.2.0-rc1' doesn't sort above the stable '1.2.0'."""
     if not s:
         return ()
-    return tuple(int(x) for x in _NUM_RE.findall(s))
+    core = re.split(r"[-+]", str(s).strip().lstrip("vV"), maxsplit=1)[0]
+    return tuple(int(x) for x in _NUM_RE.findall(core))
+
+
+def _is_newer(latest, current):
+    """True if version string `latest` is strictly newer than `current`, comparing
+    component-wise with zero-padding so '1.2' and '1.2.0' are equal (not newer)."""
+    a, b = parse_version(latest), parse_version(current)
+    n = max(len(a), len(b))
+    a += (0,) * (n - len(a))
+    b += (0,) * (n - len(b))
+    return a > b
 
 
 def _fetch_release_json(repo):
@@ -110,5 +122,5 @@ def check(current, repo, use_cache=True):
         "current": current,
         "latest": latest.lstrip("vV"),
         "url": info["url"],
-        "update_available": parse_version(latest) > parse_version(current),
+        "update_available": _is_newer(latest, current),
     }

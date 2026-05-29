@@ -243,11 +243,20 @@ def community_db():
     dest = _community_cache_path()
     if not os.path.isfile(dest):
         os.makedirs(os.path.dirname(dest), exist_ok=True)
+        # download to a .tmp and atomically promote it, so a dropped connection
+        # never leaves a truncated file that we'd treat as a valid cache forever
+        tmp = dest + ".tmp"
         try:
             sdcard.download_file(sdcard.LABELS_DB_URL,
                                  dest_folder=os.path.dirname(dest),
-                                 filename=os.path.basename(dest))
+                                 filename=os.path.basename(tmp))
+            os.replace(tmp, dest)
         except Exception:
+            try:
+                if os.path.isfile(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
             return None
     return dest if os.path.isfile(dest) else None
 
@@ -271,7 +280,7 @@ def reset_label(db_path, cart_id_hex):
 # --- the user's own "My custom labels" pack -------------------------------
 # Setting custom art edits the card's labels.db and snapshots it here, so it's
 # selectable as its own source and used as Auto's default. Installing the plain
-# The RetroGameCorps pack stays clean (no overrides forced on) so reverting works.
+# RetroGameCorps pack stays clean (no overrides forced on), so reverting works.
 def custom_pack_path():
     """Local path of the user's own labels.db (their pack with custom art)."""
     return config.backup_dir("custom_labels.db")
