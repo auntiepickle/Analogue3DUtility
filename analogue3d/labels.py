@@ -17,8 +17,10 @@ sorted entry if the cart isn't present yet).
 import os
 import struct
 import zlib
+import shutil
 
 from .ui import bold, dim, green, yellow, red, ask
+from . import config
 
 HEADER_LEN = 256
 ID_TABLE_OFFSET = 0x100
@@ -161,6 +163,58 @@ def set_label(db_path, cart_id_hex, image_path):
     return "inserted"
 
 
+# --- custom-art overrides (so your art survives a base-pack re-install) ---
+def overrides_dir():
+    return config.backup_dir("art_overrides")
+
+
+def _is_hex8(s):
+    return len(s) == 8 and all(c in "0123456789abcdef" for c in s.lower())
+
+
+def list_overrides():
+    """{cart_id: image_path} of the user's stored custom-art overrides."""
+    d = overrides_dir()
+    out = {}
+    if not os.path.isdir(d):
+        return out
+    for f in os.listdir(d):
+        stem = os.path.splitext(f)[0].lower()
+        if _is_hex8(stem):
+            out[stem] = os.path.join(d, f)
+    return out
+
+
+def save_override(cart_id_hex, image_path):
+    """Store the original image for a cart so it can be re-applied after any
+    base-pack install (re-downscaled fresh each time)."""
+    cart_id_hex = cart_id_hex.lower()
+    d = overrides_dir()
+    os.makedirs(d, exist_ok=True)
+    for cid, p in list_overrides().items():   # replace any prior override for this cart
+        if cid == cart_id_hex:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    ext = os.path.splitext(image_path)[1].lower() or ".png"
+    dest = os.path.join(d, cart_id_hex + ext)
+    shutil.copy2(image_path, dest)
+    return dest
+
+
+def apply_overrides(db_path):
+    """Re-apply every stored override into labels.db. Returns how many applied."""
+    n = 0
+    for cart_id, image_path in list_overrides().items():
+        try:
+            set_label(db_path, cart_id, image_path)
+            n += 1
+        except (ValueError, OSError):
+            pass
+    return n
+
+
 def run_interactive(sd_root):
     print("\n=== Custom Cartridge Artwork ===")
     if not have_pillow():
@@ -201,12 +255,15 @@ def run_interactive(sd_root):
 
     try:
         result = set_label(db_path, cart_id, image_path)
+        save_override(cart_id, image_path)  # keep it across future art-pack installs
     except (ValueError, OSError) as e:
         print(red(f"Failed: {e}"))
         return
     verb = "Updated" if result == "updated" else "Added"
     print(green(f"{verb} artwork for cart {cart_id}. It'll show on the console next boot."))
+    print(dim("Saved as a custom override - it'll be re-applied if you reinstall an art pack."))
 
 
 __all__ = ["compute_cart_id", "read_ids", "read_label_image", "image_to_slot",
-           "set_label", "convert_to_z64", "have_pillow", "run_interactive"]
+           "set_label", "convert_to_z64", "have_pillow", "run_interactive",
+           "overrides_dir", "list_overrides", "save_override", "apply_overrides"]

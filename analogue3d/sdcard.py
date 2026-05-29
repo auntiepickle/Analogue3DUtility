@@ -300,6 +300,16 @@ def install_labels(target_root, source=None):
     print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
     shutil.copy(local_labels_path, dest_path)
 
+    # Re-apply the user's custom-art overrides on top of the freshly-installed
+    # base pack, so installing a pack never blows away their custom cart art.
+    try:
+        from . import labels
+        n = labels.apply_overrides(dest_path)
+        if n:
+            print(green(f"Re-applied {n} custom cartridge art override(s)."))
+    except Exception:
+        pass
+
     print(green("Cartridge art pack installed - your cart art will now show."))
 
 def _zip_add_file(zipf, full_path, arcname):
