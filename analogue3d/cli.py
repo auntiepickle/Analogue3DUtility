@@ -193,7 +193,7 @@ def main():
             elif action == "artpack":
                 _art_pack_flow(root)
             elif action == "backup":
-                sdcard.create_backup(root)
+                sdcard.create_backup(root, ui.text("Label this backup (optional):") or None)
             elif action == "restore":
                 sdcard.restore_backup(root)
             elif action == "saves":

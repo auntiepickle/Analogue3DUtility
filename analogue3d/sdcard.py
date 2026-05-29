@@ -29,6 +29,14 @@ LABEL_SOURCES = [
 ]
 
 
+def sanitize_label(label):
+    """A filename-safe version of a user backup label (letters/digits/space/-/_)."""
+    if not label:
+        return ""
+    s = re.sub(r"[^A-Za-z0-9 _-]", "", str(label)).strip().replace(" ", "-")
+    return s[:40]
+
+
 def choose_label_source():
     """Let the user pick a label-DB source (or paste a URL). Returns a URL."""
     print("\nLabel database source:")
@@ -328,14 +336,15 @@ def _zip_add_file(zipf, full_path, arcname):
         zipf.writestr(info, f.read())
 
 
-def create_backup(target_root):
+def create_backup(target_root, label=None):
     print("\n=== Creating Backup ===")
     
     backup_dir = config.backup_dir("backups")
     os.makedirs(backup_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    backup_filename = f"analogue3d_backup_{timestamp}.zip"
+    tag = sanitize_label(label)
+    backup_filename = f"analogue3d_backup_{timestamp}{('_' + tag) if tag else ''}.zip"
     backup_path = os.path.join(backup_dir, backup_filename)
     
     folders_to_backup = []

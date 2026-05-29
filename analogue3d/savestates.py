@@ -128,10 +128,11 @@ def _split_folder(folder):
     return title or folder, cart_id
 
 
-def archive_all(sd_root):
+def archive_all(sd_root, label=None):
     """Zip every save state on the card into one timestamped snapshot, preserving
     the per-game folder structure inside (so a single game can be restored later).
-    Returns (zip_path, n_states); (None, 0) if there are no save states."""
+    An optional label is appended to the filename. Returns (zip_path, n_states);
+    (None, 0) if there are no save states."""
     games = find_game_states(sd_root)
     total = sum(g["count"] for g in games)
     if total == 0:
@@ -139,7 +140,8 @@ def archive_all(sd_root):
     os.makedirs(_backup_dir(), exist_ok=True)
     base = memories_dir(sd_root)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    zip_path = os.path.join(_backup_dir(), f"{SNAPSHOT_PREFIX}{stamp}.zip")
+    tag = re.sub(r"[^A-Za-z0-9 _-]", "", str(label)).strip().replace(" ", "-")[:40] if label else ""
+    zip_path = os.path.join(_backup_dir(), f"{SNAPSHOT_PREFIX}{stamp}{('_' + tag) if tag else ''}.zip")
     # PNGs are already compressed, so store (don't re-deflate) for speed.
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
         for g in games:
@@ -319,7 +321,7 @@ def run_interactive(sd_root):
         if action in (None, "back"):
             return
         if action == "archive":
-            path, n = archive_all(sd_root)
+            path, n = archive_all(sd_root, ui.text("Label this archive (optional):") or None)
             if path:
                 ui.ok(f"Archived {n} save state(s) -> {os.path.basename(path)}")
             else:
