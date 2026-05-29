@@ -379,10 +379,13 @@ def create_backup(target_root, label=None):
 
     # Fallback: some macOS card readers/mounts make the listdir scan above miss
     # these folders even when they exist, which produced empty 0 MB backups.
-    # Probe the three known names directly as a safety net.
+    # Probe the three known names directly as a safety net. Dedup case-insensitively
+    # so a case-insensitive volume doesn't back the same folder up twice.
+    have = {f.lower() for f in folders_to_backup}
     for known in ("Library", "Settings", "Memories"):
-        if known not in folders_to_backup and os.path.isdir(os.path.join(target_root, known)):
+        if known.lower() not in have and os.path.isdir(os.path.join(target_root, known)):
             folders_to_backup.append(known)
+            have.add(known.lower())
 
     if not folders_to_backup:
         print(yellow("Warning: no Library, Settings, or Memories folders found on the card - "
