@@ -225,6 +225,31 @@ def delete_snapshot(name):
     return False
 
 
+_SNAP_STAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")
+
+
+def sanitize_label(label):
+    """Filename-safe label: letters/digits/space/_/-, spaces->-, capped at 40."""
+    return re.sub(r"[^A-Za-z0-9 _-]", "", str(label or "")).strip().replace(" ", "-")[:40]
+
+
+def rename_snapshot(name, new_label):
+    """Relabel a snapshot by rewriting the tag after its timestamp. An empty label
+    strips the tag. Returns the new filename, or None if the snapshot is missing."""
+    path = _snapshot_path(name)
+    if not os.path.isfile(path):
+        return None
+    m = _SNAP_STAMP_RE.search(name)
+    if not m:
+        return None
+    tag = sanitize_label(new_label)
+    new_name = f"{SNAPSHOT_PREFIX}{m.group(1)}{('_' + tag) if tag else ''}.zip"
+    new_path = _snapshot_path(new_name)
+    if new_path != path:
+        os.replace(path, new_path)
+    return new_name
+
+
 def trim_to_latest(game, keep=DEFAULT_KEEP):
     """Delete all but the newest `keep` states for a game (newest-first already).
     Returns (removed_count, kept_count). Caller is responsible for archiving first."""
@@ -353,6 +378,6 @@ def run_interactive(sd_root):
 __all__ = [
     "find_game_states", "find_game", "memories_dir", "thumbnail",
     "archive_all", "list_snapshots", "snapshot_games", "restore_snapshot",
-    "delete_snapshot", "trim_to_latest", "delete_state", "run_interactive",
-    "DEFAULT_KEEP",
+    "delete_snapshot", "rename_snapshot", "sanitize_label", "trim_to_latest",
+    "delete_state", "run_interactive", "DEFAULT_KEEP",
 ]

@@ -26,7 +26,7 @@ software, no driver swaps.
 > installs the art pack, and updates every connected controller — no prompts.
 
 > **Prefer point-and-click?** There's a companion desktop app,
-> **[Analogue 3D Studio](https://github.com/auntiepickle/Analogue3DStudio)** — the
+> **[Analogue 3D Desktop](https://github.com/auntiepickle/Analogue3DDesktop)** — the
 > same engine with a GUI and a one-click "do everything".
 
 ---
@@ -41,8 +41,9 @@ terminals).
   controller. Run it unattended with `python a3d.py --auto`.
 - **Console firmware** — grabs the latest Analogue 3D firmware from `analogue.co`
   and copies it to the SD card, cleaning up old `a3d_os_*.bin` files.
-- **Cartridge art packs** — install a community art pack (RetroGameCorps), a
-  custom URL, or a `labels.db` you assembled yourself (e.g. via a3d-tools.online).
+- **Cartridge art packs** — install the
+  [RetroGameCorps](https://github.com/retrogamecorps/Analogue-3D-Images) art pack,
+  a custom URL, or a `labels.db` you assembled yourself (e.g. via a3d-tools.online).
 - **Backup & restore** — zips up your `Library`, `Settings`, and `Memories`
   (save states) folders, restores them on demand, and cleans out old backups.
 - **Controller-pak saves** — back up and restore your N64 save data
@@ -112,9 +113,10 @@ Analogue's on-screen update prompt.
 ## Cartridge art packs
 
 Pick **Install cartridge art pack** and choose where the pack comes from:
-the RetroGameCorps community pack (downloaded), a custom URL, or a local
-`labels.db` file you assembled yourself. The pack is copied to
-`Library/N64/Images/labels.db` on the card.
+the [RetroGameCorps](https://github.com/retrogamecorps/Analogue-3D-Images) art
+pack (downloaded), a custom URL, or a local `labels.db` file you assembled
+yourself. The pack is copied to `Library/N64/Images/labels.db` on the card.
+Big thanks to RetroGameCorps for assembling and maintaining the art pack.
 
 To replace a *single* cart's art, use **Advanced → Set one cartridge's art** and
 identify the cart by its ROM (the tool computes the ID) or its 8‑character ID.
