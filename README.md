@@ -63,6 +63,19 @@ terminals).
 
 ## Get it
 
+> ### On a Mac? Read this first
+> The tool runs fine on macOS; the only friction is the unsigned binary tripping
+> Gatekeeper when downloaded in a **browser**. Two good paths:
+> - **Run from source** (Option B below) — sidesteps Gatekeeper entirely.
+> - **Grab the binary with `curl`** — `curl` downloads skip the quarantine flag, so
+>   it launched with no Gatekeeper prompts in testing:
+> ```bash
+> cd ~/Desktop
+> curl -L -o a3d-macos https://github.com/auntiepickle/Analogue3DUtility/releases/latest/download/a3d-macos
+> chmod +x a3d-macos && ./a3d-macos
+> ```
+> Full guide (plus recovery if you already used a browser): **[MACOS.md](MACOS.md)**.
+
 ### Option A — download a binary (no Python needed)
 
 Grab the latest from the

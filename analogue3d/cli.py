@@ -85,8 +85,9 @@ def _auto_all():
         sdcard.create_backup(root)
         if not sdcard.install_firmware(root):
             ui.warn("Firmware step didn't complete - check your connection.")
-        sdcard.install_labels(
-            root, labels.custom_pack_path() if labels.has_custom_pack() else None)
+        if not sdcard.install_labels(
+                root, labels.custom_pack_path() if labels.has_custom_pack() else None):
+            ui.warn("Art pack step didn't complete.")
     except (requests.RequestException, OSError) as e:
         ui.err(f"Auto update stopped during SD tasks: {e}")
         return
