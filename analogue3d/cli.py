@@ -8,7 +8,7 @@ import os
 
 import requests
 
-from . import sdcard, controller, labels, saves, savestates, config, ui, updates
+from . import sdcard, controller, labels, saves, savestates, config, ui, updates, selfupdate
 
 
 def _status():
@@ -160,16 +160,44 @@ def _settings_flow():
 
 
 def _update_notice():
-    """One dim line if a newer release of this tool is out (cached, fails silent)."""
+    """If a newer release is out, say so (cached, fails silent). On a frozen binary
+    we also offer to download and install it in place; from source you update with
+    git/pip, so we just show the link."""
     try:
         from . import __version__
         info = updates.check(__version__, updates.CLI_REPO)
     except Exception:
         return
-    if info and info.get("update_available"):
-        ui.warn(f"  {ui.DOT} Update available: v{info['latest']} "
-                f"(you have v{info['current']})")
-        ui.info(f"     {info['url']}")
+    if not (info and info.get("update_available")):
+        return
+    ui.warn(f"  {ui.DOT} Update available: v{info['latest']} "
+            f"(you have v{info['current']})")
+    ui.info(f"     {info['url']}")
+    if ui.ASSUME_YES or not selfupdate.can_self_update():
+        return  # don't auto-update unattended; from source, update via git/pip
+    if ui.confirm("Download and install it now?", default=False):
+        _self_update()
+
+
+def _self_update():
+    """Download the latest build, then relaunch into it. Hard-exits on success so
+    the file unlocks and the swap helper can take over."""
+    last = [-1]
+
+    def progress(pct):
+        if pct != last[0] and (pct % 5 == 0 or pct == 100):
+            last[0] = pct
+            print(f"\r  Downloading update... {pct}%", end="", flush=True)
+
+    ui.info("Downloading the new version...")
+    res = selfupdate.self_update(progress=progress)
+    print()
+    if not res.get("ok"):
+        ui.err(f"Update failed: {res.get('error', 'unknown error')}")
+        ui.info("You can always grab it from the releases page above.")
+        return
+    ui.ok(f"Downloaded v{res.get('tag', '').lstrip('vV')}. Restarting into the new version...")
+    os._exit(0)
 
 
 def main():
