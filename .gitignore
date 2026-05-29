@@ -16,6 +16,10 @@ labels.db
 # Backups created by the tool
 backups/
 save_backups/
+memory_backups/
+
+# Editable-install metadata
+*.egg-info/
 
 # Local editor / Claude Code config
 .claude/
