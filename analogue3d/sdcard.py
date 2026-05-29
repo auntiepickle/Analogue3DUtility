@@ -263,6 +263,24 @@ def select_sd_card():
         print(red("Invalid selection."))
         return None
 
+def _is_readonly_error(exc):
+    """True if the exception looks like a read-only / permission-denied filesystem
+    error. errno 30 = EROFS (volume mounted read-only), 13 = EACCES. Both are common
+    on macOS when a card reader remounts the SD card read-only after an error."""
+    return isinstance(exc, OSError) and getattr(exc, "errno", None) in (30, 13)
+
+
+def _readonly_message(path):
+    return red(
+        f"Cannot write to {path} - the SD card looks read-only.\n"
+        "On macOS this usually means:\n"
+        "  - The card got remounted read-only after an error: safely eject it,\n"
+        "    wait a few seconds, and re-insert it (or try a different reader).\n"
+        "  - Run First Aid on the card in Disk Utility if it keeps happening.\n"
+        "  - Don't put the console itself in USB 'SD Card' mode for writes."
+    )
+
+
 def install_firmware(target_root):
     print("\n=== Updating Analogue 3D Firmware ===")
     fw_url, fw_filename = get_latest_firmware_url()
@@ -273,8 +291,14 @@ def install_firmware(target_root):
     dest_path = os.path.join(target_root, fw_filename)
     
     print(f"Copying {fw_filename} to SD card root...")
-    shutil.copy(local_fw_path, dest_path)
-    
+    try:
+        shutil.copy(local_fw_path, dest_path)
+    except OSError as e:
+        if _is_readonly_error(e):
+            print(_readonly_message(target_root))
+            return False
+        raise
+
     print("Removing old firmware files...")
     removed = 0
     for entry in os.listdir(target_root):
@@ -303,13 +327,19 @@ def install_labels(target_root, source=None):
         local_labels_path = download_file(src, dest_folder=".")
 
     labels_dir = os.path.join(target_root, "Library", "N64", "Images")
-    os.makedirs(labels_dir, exist_ok=True)
-
     dest_path = os.path.join(labels_dir, LABELS_DB_FILENAME)
     print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
-    shutil.copy(local_labels_path, dest_path)
+    try:
+        os.makedirs(labels_dir, exist_ok=True)
+        shutil.copy(local_labels_path, dest_path)
+    except OSError as e:
+        if _is_readonly_error(e):
+            print(_readonly_message(target_root))
+            return False
+        raise
 
     print(green("Cartridge art pack installed - your cart art will now show."))
+    return True
 
 def _zip_add_file(zipf, full_path, arcname):
     """Add a file to the zip with a ZIP-safe timestamp. Some Analogue SD files
@@ -339,14 +369,24 @@ def create_backup(target_root, label=None):
     backup_path = os.path.join(backup_dir, backup_filename)
     
     folders_to_backup = []
-    for entry in os.listdir(target_root):
-        entry_lower = entry.lower()
-        entry_path = os.path.join(target_root, entry)
-        if os.path.isdir(entry_path) and entry_lower in {"library", "settings", "memories"}:
-            folders_to_backup.append(entry)
-    
+    try:
+        for entry in os.listdir(target_root):
+            entry_path = os.path.join(target_root, entry)
+            if os.path.isdir(entry_path) and entry.lower() in {"library", "settings", "memories"}:
+                folders_to_backup.append(entry)
+    except OSError as e:
+        print(yellow(f"Warning: couldn't list the SD card root ({e})."))
+
+    # Fallback: some macOS card readers/mounts make the listdir scan above miss
+    # these folders even when they exist, which produced empty 0 MB backups.
+    # Probe the three known names directly as a safety net.
+    for known in ("Library", "Settings", "Memories"):
+        if known not in folders_to_backup and os.path.isdir(os.path.join(target_root, known)):
+            folders_to_backup.append(known)
+
     if not folders_to_backup:
-        print("Warning: No Library or Settings folder found. Creating empty backup anyway.")
+        print(yellow("Warning: no Library, Settings, or Memories folders found on the card - "
+                     "creating an empty backup anyway (this is usually not what you want)."))
     else:
         print(f"Backing up folders (exact casing preserved): {', '.join(folders_to_backup)}")
     
@@ -368,7 +408,15 @@ def create_backup(target_root, label=None):
                     arcname = os.path.relpath(full_path, target_root).replace(os.sep, '/')
                     _zip_add_file(zipf, full_path, arcname)
     
-    print(f"Backup created successfully!")
+    try:
+        size = os.path.getsize(backup_path)
+        print(green(f"Backup created successfully!  ({size:,} bytes, {size / (1024 * 1024):.2f} MB)"))
+        if size < 100 * 1024:
+            print(yellow("Warning: this backup is very small (< 100 KB) - the expected folders "
+                         "may not have been found. On macOS this can happen with certain card "
+                         "readers or if the console is in USB 'SD Card' mode."))
+    except OSError:
+        print(green("Backup created successfully!"))
     print(f"Location: {backup_path}")
 
 
