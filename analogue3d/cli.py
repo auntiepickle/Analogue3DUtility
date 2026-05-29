@@ -149,8 +149,10 @@ def _settings_flow():
         if action in (None, "back"):
             return
         if action == "change":
-            p = ui.text("New backup folder (full path):").strip('"')
-            if p:
+            p = ui.text("New backup folder (full path, blank or q to cancel):").strip().strip('"')
+            if not p or p.lower() in ("q", "quit", "cancel"):
+                ui.info("Cancelled - backup location unchanged.")
+            else:
                 config.set_backup_root(p)
                 ui.ok("Backup location set to: " + config.get_backup_root())
         elif action == "reset":
