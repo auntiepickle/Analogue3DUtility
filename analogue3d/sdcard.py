@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import shutil
+import tempfile
 import zipfile
 import ctypes
 import time
@@ -285,33 +286,40 @@ def install_firmware(target_root):
     fw_url, fw_filename = get_latest_firmware_url()
     if not fw_url:
         return False
-        
-    local_fw_path = download_file(fw_url, filename=fw_filename)
-    dest_path = os.path.join(target_root, fw_filename)
-    
-    print(f"Copying {fw_filename} to SD card root...")
-    try:
-        shutil.copy(local_fw_path, dest_path)
-    except OSError as e:
-        if _is_readonly_error(e):
-            print(_readonly_message(target_root))
-            return False
-        raise
 
-    print("Removing old firmware files...")
-    removed = 0
-    for entry in os.listdir(target_root):
-        if entry.startswith("a3d_os_") and entry.endswith(".bin") and entry != fw_filename:
-            old_path = os.path.join(target_root, entry)
-            try:
-                os.remove(old_path)
-                print(f"  Removed {entry}")
-                removed += 1
-            except OSError:
-                pass
-    if removed == 0:
-        print("  No old firmware files found.")
-    
+    # Download to a writable temp dir, not the current working directory. A GUI
+    # build launched from /Applications has CWD=/ on macOS (the sealed system
+    # volume), where the write would fail with EROFS and abort the Auto flow.
+    tmpdir = tempfile.mkdtemp(prefix="a3d-fw-")
+    try:
+        local_fw_path = download_file(fw_url, dest_folder=tmpdir, filename=fw_filename)
+        dest_path = os.path.join(target_root, fw_filename)
+
+        print(f"Copying {fw_filename} to SD card root...")
+        try:
+            shutil.copy(local_fw_path, dest_path)
+        except OSError as e:
+            if _is_readonly_error(e):
+                print(_readonly_message(target_root))
+                return False
+            raise
+
+        print("Removing old firmware files...")
+        removed = 0
+        for entry in os.listdir(target_root):
+            if entry.startswith("a3d_os_") and entry.endswith(".bin") and entry != fw_filename:
+                old_path = os.path.join(target_root, entry)
+                try:
+                    os.remove(old_path)
+                    print(f"  Removed {entry}")
+                    removed += 1
+                except OSError:
+                    pass
+        if removed == 0:
+            print("  No old firmware files found.")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
     return True
 
 def install_labels(target_root, source=None):
@@ -319,26 +327,34 @@ def install_labels(target_root, source=None):
     to a local labels.db file you've assembled; defaults to the RetroGameCorps pack."""
     print("\n=== Installing Cartridge Art Pack ===")
     src = source or LABELS_DB_URL
-    if os.path.isfile(src):
-        print(f"Loading art pack from local file: {src}")
-        local_labels_path = src
-    else:
-        local_labels_path = download_file(src, dest_folder=".")
-
-    labels_dir = os.path.join(target_root, "Library", "N64", "Images")
-    dest_path = os.path.join(labels_dir, LABELS_DB_FILENAME)
-    print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
+    tmpdir = None
     try:
-        os.makedirs(labels_dir, exist_ok=True)
-        shutil.copy(local_labels_path, dest_path)
-    except OSError as e:
-        if _is_readonly_error(e):
-            print(_readonly_message(target_root))
-            return False
-        raise
+        if os.path.isfile(src):
+            print(f"Loading art pack from local file: {src}")
+            local_labels_path = src
+        else:
+            # Same reasoning as install_firmware: never write to CWD, which on a
+            # /Applications-launched GUI build is the read-only system volume.
+            tmpdir = tempfile.mkdtemp(prefix="a3d-labels-")
+            local_labels_path = download_file(src, dest_folder=tmpdir)
 
-    print(green("Cartridge art pack installed - your cart art will now show."))
-    return True
+        labels_dir = os.path.join(target_root, "Library", "N64", "Images")
+        dest_path = os.path.join(labels_dir, LABELS_DB_FILENAME)
+        print(f"Copying {LABELS_DB_FILENAME} to {labels_dir}/")
+        try:
+            os.makedirs(labels_dir, exist_ok=True)
+            shutil.copy(local_labels_path, dest_path)
+        except OSError as e:
+            if _is_readonly_error(e):
+                print(_readonly_message(target_root))
+                return False
+            raise
+
+        print(green("Cartridge art pack installed - your cart art will now show."))
+        return True
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 def _zip_add_file(zipf, full_path, arcname):
     """Add a file to the zip with a ZIP-safe timestamp. Some Analogue SD files
@@ -356,7 +372,17 @@ def _zip_add_file(zipf, full_path, arcname):
         zipf.writestr(info, f.read())
 
 
-def create_backup(target_root, label=None):
+def create_backup(target_root, label=None, progress=None):
+    """Zip Library/Settings/Memories from `target_root` into a labelled backup.
+
+    `progress` is an optional callable invoked with an integer percent (0..100) as
+    the backup advances, computed from bytes added to the zip. Useful for GUI
+    progress bars; the CLI ignores it by default.
+
+    Compression is zlib level 1 (fastest). The Analogue 3D card is mostly already-
+    compressed content (ROM art, save states), so higher levels burn CPU for very
+    little size win - on a slow macOS exFAT mount that CPU burn is the bottleneck.
+    """
     print("\n=== Creating Backup ===")
     
     backup_dir = config.backup_dir("backups")
@@ -392,23 +418,56 @@ def create_backup(target_root, label=None):
     else:
         print(f"Backing up folders (exact casing preserved): {', '.join(folders_to_backup)}")
     
-    with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    # Pre-walk to total the source bytes so progress can be a real percent.
+    total_bytes = 0
+    if progress:
+        for folder in folders_to_backup:
+            for root, _dirs, files in os.walk(os.path.join(target_root, folder)):
+                for fn in files:
+                    try:
+                        total_bytes += os.path.getsize(os.path.join(root, fn))
+                    except OSError:
+                        pass
+
+    done_bytes = 0
+    last_pct = -1
+
+    def _emit(pct):
+        nonlocal last_pct
+        if progress and pct != last_pct:
+            last_pct = pct
+            try:
+                progress(pct)
+            except Exception:
+                pass  # a broken progress callback must never break the backup
+
+    with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=1) as zipf:
         for folder in folders_to_backup:
             folder_path = os.path.join(target_root, folder)
             zip_arcname = folder.replace(os.sep, '/') + '/'
             zipf.writestr(zip_arcname, b'')
-            
+
             for root, dirs, files in os.walk(folder_path):
                 for d in dirs:
                     subdir_path = os.path.join(root, d)
-                    if not os.listdir(subdir_path):
-                        rel = os.path.relpath(subdir_path, target_root).replace(os.sep, '/') + '/'
-                        zipf.writestr(rel, b'')
-                
+                    try:
+                        if not os.listdir(subdir_path):
+                            rel = os.path.relpath(subdir_path, target_root).replace(os.sep, '/') + '/'
+                            zipf.writestr(rel, b'')
+                    except OSError:
+                        pass
+
                 for file in files:
                     full_path = os.path.join(root, file)
                     arcname = os.path.relpath(full_path, target_root).replace(os.sep, '/')
                     _zip_add_file(zipf, full_path, arcname)
+                    if progress and total_bytes:
+                        try:
+                            done_bytes += os.path.getsize(full_path)
+                        except OSError:
+                            pass
+                        _emit(min(99, done_bytes * 100 // total_bytes))
+    _emit(100)
     
     try:
         size = os.path.getsize(backup_path)
