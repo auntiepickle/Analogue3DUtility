@@ -359,7 +359,12 @@ def install_labels(target_root, source=None):
 def _zip_add_file(zipf, full_path, arcname):
     """Add a file to the zip with a ZIP-safe timestamp. Some Analogue SD files
     (e.g. library.db) carry a bogus/zero mtime that crashes zipfile's localtime()
-    with [Errno 22]; fall back to a valid date in that case."""
+    with [Errno 22]; fall back to a valid date in that case.
+
+    compresslevel=1 is passed explicitly on the writestr call - ZipFile's own
+    constructor level doesn't reach writestr when called with a pre-built ZipInfo
+    (writestr only honors zinfo._compresslevel, which is None here, so it would
+    silently default to zlib level 6 otherwise)."""
     try:
         dt = time.localtime(os.path.getmtime(full_path))[:6]
         if dt[0] < 1980:
@@ -369,7 +374,7 @@ def _zip_add_file(zipf, full_path, arcname):
     info = zipfile.ZipInfo(arcname, date_time=dt)
     info.compress_type = zipfile.ZIP_DEFLATED
     with open(full_path, "rb") as f:
-        zipf.writestr(info, f.read())
+        zipf.writestr(info, f.read(), compresslevel=1)
 
 
 def create_backup(target_root, label=None, progress=None):
