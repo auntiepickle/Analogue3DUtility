@@ -25,6 +25,10 @@ software, no driver swaps.
 > Want it all in one shot? **`python a3d.py --auto`** backs up, updates firmware,
 > installs the art pack, and updates every connected controller — no prompts.
 
+> **Prefer point-and-click?** There's a companion desktop app,
+> **[Analogue 3D Studio](https://github.com/auntiepickle/Analogue3DStudio)** — the
+> same engine with a GUI and a one-click "do everything".
+
 ---
 
 ## Features
