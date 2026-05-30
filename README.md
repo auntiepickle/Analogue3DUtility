@@ -16,7 +16,29 @@ A clean, dark, **terminal-native** companion for the **Analogue 3D** and its
 art packs, save backups, and flashing the controller — no GUI, no vendor
 software, no driver swaps.
 
-> ### One line to run it
+## Most people want the desktop app instead
+
+Unless you specifically want a CLI tool — for scripting, terminal habits, or
+Linux (there's no Linux GUI build) — the companion
+**[Analogue 3D Desktop](https://github.com/auntiepickle/Analogue3DDesktop)**
+is the easier path: same engine, point-and-click, one-click "do everything," and
+it ships as a Windows `.exe` and a **drag-to-Applications macOS `.dmg`**.
+
+**On a Mac, just use the desktop app.** The CLI's first-launch Gatekeeper
+gauntlet isn't worth fighting when the desktop already ships as a proper signed
+`.app` you drag into Applications.
+
+<p align="center">
+  <a href="https://github.com/auntiepickle/Analogue3DDesktop">
+    <img src="https://github.com/auntiepickle/Analogue3DDesktop/raw/main/assets/screenshots/main.png" alt="Analogue 3D Desktop screenshot" width="80%">
+  </a>
+</p>
+
+The rest of this README is for people who actively want the terminal version.
+
+---
+
+> ### Quick start (CLI)
 > **If you have Python, just run it** — the launcher installs anything it needs,
 > auto-detects your SD card, and drops you into the menu:
 > ```bash
@@ -24,10 +46,6 @@ software, no driver swaps.
 > ```
 > Want it all in one shot? **`python a3d.py --auto`** backs up, updates firmware,
 > installs the art pack, and updates every connected controller — no prompts.
-
-> **Prefer point-and-click?** There's a companion desktop app,
-> **[Analogue 3D Desktop](https://github.com/auntiepickle/Analogue3DDesktop)** — the
-> same engine with a GUI and a one-click "do everything".
 
 ---
 
@@ -63,18 +81,18 @@ terminals).
 
 ## Get it
 
-> ### On a Mac? Read this first
-> The tool runs fine on macOS; the only friction is the unsigned binary tripping
-> Gatekeeper when downloaded in a **browser**. Two good paths:
-> - **Run from source** (Option B below) — sidesteps Gatekeeper entirely.
-> - **Grab the binary with `curl`** — `curl` downloads skip the quarantine flag, so
->   it launched with no Gatekeeper prompts in testing:
+> ### Specifically want the CLI on a Mac?
+> Most Mac users will be happier with **[Analogue 3D Desktop](https://github.com/auntiepickle/Analogue3DDesktop)** — no Gatekeeper hassle,
+> drag the `.dmg` to Applications, done. If you really want the CLI on a Mac
+> instead, two good paths to skip the unsigned-binary warnings:
+> - **Run from source** (Option B below) — no Gatekeeper at all.
+> - **Grab the binary with `curl`** — `curl` downloads aren't quarantined:
 > ```bash
 > cd ~/Desktop
 > curl -L -o a3d-macos https://github.com/auntiepickle/Analogue3DUtility/releases/latest/download/a3d-macos
 > chmod +x a3d-macos && ./a3d-macos
 > ```
-> Full guide (plus recovery if you already used a browser): **[MACOS.md](MACOS.md)**.
+> Full guide: **[MACOS.md](MACOS.md)**.
 
 ### Option A — download a binary (no Python needed)
 
