@@ -4,9 +4,10 @@
 > The CLI works on macOS but the install path is fiddly — Gatekeeper warnings,
 > right-click → Open, the `curl` trick to skip quarantine, etc. The companion
 > **[Analogue 3D Desktop](https://github.com/auntiepickle/Analogue3DDesktop)** ships
-> as a proper signed `.app` in a drag-to-Applications `.dmg` — no terminal, no
-> warnings. Unless you specifically want a CLI (scripting, terminal habits), grab
-> the desktop and skip the rest of this guide.
+> as a signed `.app` in a drag-to-Applications `.dmg` — no terminal, and (until
+> we notarize it) only a one-time right-click → Open on first launch instead of
+> the CLI's wider Gatekeeper gauntlet. Unless you specifically want a CLI
+> (scripting, terminal habits), grab the desktop and skip the rest of this guide.
 
 The CLI works great on macOS once it's running. The only friction is the
 pre-built `a3d-macos` binary: it's unsigned and not notarized, so downloading it
