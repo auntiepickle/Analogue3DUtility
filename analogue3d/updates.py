@@ -1,6 +1,6 @@
 """Is there a newer release of this tool itself?
 
-A lightweight check against the GitHub Releases API. It is cached for a day and
+A lightweight check against the GitHub Releases API. It is cached for an hour and
 fails silently (offline, rate-limited, no releases yet), so it never slows down
 or blocks a launch. Used by both the CLI banner and the desktop app's header.
 """
@@ -17,7 +17,7 @@ CLI_REPO = "auntiepickle/Analogue3DUtility"
 GUI_REPO = "auntiepickle/Analogue3DDesktop"  # keep in sync if the repo is renamed
 
 _CACHE_PATH = os.path.join(os.path.dirname(config.config_path()), "update_check.json")
-_CACHE_TTL = 24 * 3600  # one network check per day is plenty
+_CACHE_TTL = 3600  # one network check per hour — fast enough to surface a fresh release
 _NUM_RE = re.compile(r"\d+")
 
 
@@ -94,7 +94,7 @@ def _save_cache(cache):
 
 
 def latest_tag(repo, use_cache=True):
-    """{'tag', 'url'} for the repo's latest release, or None. Cached daily; on any
+    """{'tag', 'url'} for the repo's latest release, or None. Cached hourly; on any
     failure falls back to a stale cache entry if present, else returns None."""
     cache = _load_cache() if use_cache else {}
     entry = cache.get(repo)
