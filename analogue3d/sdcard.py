@@ -130,7 +130,13 @@ def get_volume_label(mount):
     return os.path.basename(mount.rstrip(os.sep))
 
 def _analogue_signature(mount, label):
-    """Score how likely a drive is the Analogue 3D card, by label + contents."""
+    """Score how likely a drive is the Analogue 3D card, by label + contents.
+
+    The strong-match threshold downstream is `score >= 4`. Weights are
+    chosen so any ONE of {volume label, Library+Settings dir pair} is
+    decisive on its own, but a stray ``a3d_os_*.bin`` (e.g. a firmware
+    file the user downloaded to their data drive) is only corroborating —
+    it shouldn't false-positive a regular drive as the SD card."""
     score = 0
     reasons = []
     if label.strip().upper() == ANALOGUE_VOLUME_LABEL:
@@ -141,11 +147,11 @@ def _analogue_signature(mount, label):
     except OSError:
         entries = []
     if any(re.match(r"a3d_os_.*\.bin$", e, re.IGNORECASE) for e in entries):
-        score += 4
+        score += 2
         reasons.append("firmware file")
     lower = {e.lower() for e in entries}
     if "library" in lower and "settings" in lower:
-        score += 3
+        score += 4
         reasons.append("Library + Settings")
     return score, reasons
 
