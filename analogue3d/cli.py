@@ -105,7 +105,7 @@ def _auto_all():
             (ui.warn if s.get("failed") else ui.ok)(msg)
 
     ui.ok("SD tasks complete.")
-    ui.info("Safely eject the card. For the firmware update: hold Pairing + Power on boot.")
+    ui.info("Safely eject the card. To flash a controller, flip its back switch to D (DInput); the S position is Switch-emulation and the updater can't reach it.")
 
 
 def run_auto():
@@ -243,7 +243,7 @@ def main():
                 continue
             if action == "firmware":
                 sdcard.install_firmware(root)
-                ui.info("For the firmware update: hold Pairing + Power on boot.")
+                ui.info("To flash a controller, flip its back switch to D (DInput); the S position is Switch-emulation and the updater can't reach it.")
             elif action == "artpack":
                 _art_pack_flow(root)
             elif action == "backup":

@@ -53,6 +53,13 @@ except ImportError:  # pragma: no cover - surfaced to the user by the caller
 
 VID = 0x2DC8
 PID_APP = 0x3019
+# The 8BitDo 64 also exposes a Nintendo "Switch" personality (the back-of-
+# controller S/D switch's S position). In that mode it identifies as
+# Nintendo's official N64 USB Controller (Switch Online edition) and is
+# invisible to our flash protocol — we can still detect it so the UI can say
+# "flip the S/D switch to D" instead of just silently showing 0 connected.
+SWITCH_MODE_VID = 0x057E
+SWITCH_MODE_PID = 0x2019
 FIRMWARE_TYPE = 78
 
 # The newest firmware release this tool's flash path has actually been verified
@@ -373,6 +380,17 @@ def connected_count():
     if hid is None:
         return 0
     return sum(1 for d in hid.enumerate(VID, PID_APP)
+               if d.get("usage_page") == 0x01 and d.get("usage") == 0x05)
+
+
+def connected_in_switch_mode_count():
+    """How many 8BitDo 64s are plugged in but stuck in Nintendo-emulation
+    (S position on the back switch). The firmware updater can't reach them
+    there — they'd need to be flipped to D first. UI layer uses this to
+    explain a "0 connected" state instead of failing silently."""
+    if hid is None:
+        return 0
+    return sum(1 for d in hid.enumerate(SWITCH_MODE_VID, SWITCH_MODE_PID)
                if d.get("usage_page") == 0x01 and d.get("usage") == 0x05)
 
 
