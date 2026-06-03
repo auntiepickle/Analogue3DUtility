@@ -387,11 +387,26 @@ def connected_in_switch_mode_count():
     """How many 8BitDo 64s are plugged in but stuck in Nintendo-emulation
     (S position on the back switch). The firmware updater can't reach them
     there — they'd need to be flipped to D first. UI layer uses this to
-    explain a "0 connected" state instead of failing silently."""
+    explain a "0 connected" state instead of failing silently.
+
+    Note: in S mode the pad reports as usage page 0x01 / usage 0x04
+    (Joystick), NOT 0x05 (Game pad) like D mode. The Nintendo N64
+    Controller VID:PID (057e:2019) is narrow enough on its own that
+    we don't need a usage filter, so we deduplicate by the (vid, pid,
+    path-prefix) instead — multiple HID interfaces would otherwise
+    double-count each physical device."""
     if hid is None:
         return 0
-    return sum(1 for d in hid.enumerate(SWITCH_MODE_VID, SWITCH_MODE_PID)
-               if d.get("usage_page") == 0x01 and d.get("usage") == 0x05)
+    # One physical device often exposes multiple HID interfaces; dedupe by
+    # the USB port path (everything up to the &MI_##).
+    seen = set()
+    for d in hid.enumerate(SWITCH_MODE_VID, SWITCH_MODE_PID):
+        path = d.get("path", b"")
+        if isinstance(path, bytes):
+            path = path.decode("ascii", errors="ignore")
+        key = path.split("&mi_")[0].split("&MI_")[0]
+        seen.add(key)
+    return len(seen)
 
 
 def _wait_until_ready(expected, timeout=90):
