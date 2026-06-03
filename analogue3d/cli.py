@@ -63,6 +63,7 @@ def _auto_all():
         return
 
     n_controllers = controller.connected_count()
+    n_switch = controller.connected_in_switch_mode_count() if n_controllers == 0 else 0
     ui.info("This will, for every part that applies:")
     print(f"   {ui.DOT} Back up the SD card")
     print(f"   {ui.DOT} Update the console firmware")
@@ -74,6 +75,10 @@ def _auto_all():
         print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.green("(detected)"))
     elif n_controllers > 1:
         print(f"   {ui.DOT} Update all {n_controllers} 8BitDo 64 controllers " + ui.green("(detected)"))
+    elif n_switch:
+        pl = "controller" if n_switch == 1 else "controllers"
+        print(f"   {ui.DOT} Update the 8BitDo 64 controller "
+              + ui.dim(f"(skipped — {n_switch} {pl} in S mode; flip back switch to D)"))
     else:
         print(f"   {ui.DOT} Update the 8BitDo 64 controller " + ui.dim("(not detected - will skip)"))
 

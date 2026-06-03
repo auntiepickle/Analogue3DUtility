@@ -654,6 +654,17 @@ def run_interactive():
         _run_update_all()
         return
 
+    # 0 in D mode but N in S mode → tell the user the actual fix instead of
+    # falling into the generic "USB-C *data* cable" tip via ControllerError.
+    if n == 0:
+        ns = connected_in_switch_mode_count()
+        if ns:
+            pl = "controller" if ns == 1 else "controllers"
+            print(f"\n{ns} 8BitDo 64 {pl} detected in Switch (S) mode — "
+                  f"the firmware updater can't reach them there. "
+                  f"Flip the back switch to D (DInput) and re-plug the USB-C cable.")
+            return
+
     try:
         dev = EightBitDo64().open()
     except ControllerError as e:
