@@ -421,9 +421,12 @@ def connected_devices():
 
     `mode="app"` entries are sorted before `mode="switch"` so a UI rendering
     them into N port slots gives stable ordering — the readable ones come
-    first. Opens each app-mode device briefly to read its firmware version;
-    callers that just need counts should stick to connected_count() /
-    connected_in_switch_mode_count() to avoid the per-device open cost."""
+    first. Opens each app-mode device briefly to read its firmware version
+    (which calls StopSendKey internally — that silences the controller's HID
+    input stream for the few ms the open is held; callers should only run
+    this on-demand, not from a periodic status poll, so an in-game pad
+    isn't briefly unresponsive on every tick). Callers that just need counts
+    should stick to connected_count() / connected_in_switch_mode_count()."""
     if hid is None:
         return []
     out = []
