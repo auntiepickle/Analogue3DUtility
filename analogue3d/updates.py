@@ -53,6 +53,7 @@ def _fetch_latest(repo):
     return {
         "tag": data.get("tag_name") or "",
         "url": data.get("html_url") or f"https://github.com/{repo}/releases/latest",
+        "notes": data.get("body") or "",
     }
 
 
@@ -94,26 +95,33 @@ def _save_cache(cache):
 
 
 def latest_tag(repo, use_cache=True):
-    """{'tag', 'url'} for the repo's latest release, or None. Cached hourly; on any
-    failure falls back to a stale cache entry if present, else returns None."""
+    """{'tag', 'url', 'notes'} for the repo's latest release, or None. Cached
+    hourly; on any failure falls back to a stale cache entry if present, else
+    returns None. ``notes`` is the release-body markdown (may be empty)."""
     cache = _load_cache() if use_cache else {}
     entry = cache.get(repo)
     if use_cache and entry and (time.time() - entry.get("at", 0)) < _CACHE_TTL:
-        return {"tag": entry.get("tag", ""), "url": entry.get("url", "")}
+        return {"tag": entry.get("tag", ""), "url": entry.get("url", ""),
+                "notes": entry.get("notes", "")}
     try:
         info = _fetch_latest(repo)
     except Exception:
         if entry:
-            return {"tag": entry.get("tag", ""), "url": entry.get("url", "")}
+            return {"tag": entry.get("tag", ""), "url": entry.get("url", ""),
+                    "notes": entry.get("notes", "")}
         return None
-    cache[repo] = {"tag": info["tag"], "url": info["url"], "at": time.time()}
+    cache[repo] = {"tag": info["tag"], "url": info["url"],
+                   "notes": info.get("notes", ""), "at": time.time()}
     _save_cache(cache)
     return info
 
 
 def check(current, repo, use_cache=True):
     """Compare `current` (e.g. '0.6.1') with the repo's latest release tag.
-    Returns {'current', 'latest', 'url', 'update_available'} or None if unknown."""
+    Returns {'current', 'latest', 'url', 'notes', 'update_available'} or
+    None if unknown. ``notes`` is the GitHub release body (markdown text,
+    possibly empty) — surfaced so callers can show "what's new" in their
+    update confirmation UI."""
     info = latest_tag(repo, use_cache=use_cache)
     if not info or not info.get("tag"):
         return None
@@ -122,5 +130,6 @@ def check(current, repo, use_cache=True):
         "current": current,
         "latest": latest.lstrip("vV"),
         "url": info["url"],
+        "notes": info.get("notes", ""),
         "update_available": _is_newer(latest, current),
     }
