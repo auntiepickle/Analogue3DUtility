@@ -409,6 +409,61 @@ def connected_in_switch_mode_count():
     return len(seen)
 
 
+def connected_devices():
+    """Per-controller summary for every visible 8BitDo 64 (app + Switch mode).
+
+    Returns a list of dicts, one per physical controller (deduped by USB port
+    path so multi-interface devices count once):
+
+        [{"mode": "app",    "version_int": 204, "version_str": "2.04"},
+         {"mode": "app",    "version_int": None, "version_str": None},   # version read failed
+         {"mode": "switch"}]                                              # S position
+
+    `mode="app"` entries are sorted before `mode="switch"` so a UI rendering
+    them into N port slots gives stable ordering — the readable ones come
+    first. Opens each app-mode device briefly to read its firmware version
+    (which calls StopSendKey internally — that silences the controller's HID
+    input stream for the few ms the open is held; callers should only run
+    this on-demand, not from a periodic status poll, so an in-game pad
+    isn't briefly unresponsive on every tick). Callers that just need counts
+    should stick to connected_count() / connected_in_switch_mode_count()."""
+    if hid is None:
+        return []
+    out = []
+    # App-mode controllers: the game-pad-usage filter (0x05) already gives
+    # exactly one entry per physical device — the keyboard interface (0x06)
+    # is excluded. No path-prefix dedup needed here, and the naive prefix
+    # dedup is actively wrong because two controllers share the bit before
+    # the per-device hash (`...&PID_3019&MI_00#`).
+    for d in hid.enumerate(VID, PID_APP):
+        if d.get("usage_page") != 0x01 or d.get("usage") != 0x05:
+            continue
+        path = d.get("path", b"")
+        entry = {"mode": "app", "version_int": None, "version_str": None}
+        try:
+            dev = EightBitDo64().open(path)
+            try:
+                v = dev.read_version()
+            finally:
+                dev.close()
+            entry["version_int"] = v
+            entry["version_str"] = format_version(v)
+        except Exception:
+            pass
+        out.append(entry)
+    # Switch-mode pads: we can't read a version, just count them.
+    seen_sw = set()
+    for d in hid.enumerate(SWITCH_MODE_VID, SWITCH_MODE_PID):
+        path = d.get("path", b"")
+        path_str = path.decode("ascii", errors="ignore") if isinstance(path, bytes) else path
+        key = path_str.split("&mi_")[0].split("&MI_")[0]
+        if key in seen_sw:
+            continue
+        seen_sw.add(key)
+        out.append({"mode": "switch"})
+    return out
+
+
 def _wait_until_ready(expected, timeout=90):
     """After a flash reboots a controller, wait until `expected` controllers are
     actually responsive (each opens and answers a version read) - not just
