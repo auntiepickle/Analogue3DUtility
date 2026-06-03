@@ -105,7 +105,7 @@ def _auto_all():
             (ui.warn if s.get("failed") else ui.ok)(msg)
 
     ui.ok("SD tasks complete.")
-    ui.info("Safely eject the card. To flash a controller, flip its back switch to D (DInput); the S position is Switch-emulation and the updater can't reach it.")
+    ui.info("Safely eject the card.")
 
 
 def run_auto():
