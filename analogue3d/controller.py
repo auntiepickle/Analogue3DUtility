@@ -53,6 +53,13 @@ except ImportError:  # pragma: no cover - surfaced to the user by the caller
 
 VID = 0x2DC8
 PID_APP = 0x3019
+# The 8BitDo 64 also exposes a Nintendo "Switch" personality (the back-of-
+# controller S/D switch's S position). In that mode it identifies as
+# Nintendo's official N64 USB Controller (Switch Online edition) and is
+# invisible to our flash protocol — we can still detect it so the UI can say
+# "flip the S/D switch to D" instead of just silently showing 0 connected.
+SWITCH_MODE_VID = 0x057E
+SWITCH_MODE_PID = 0x2019
 FIRMWARE_TYPE = 78
 
 # The newest firmware release this tool's flash path has actually been verified
@@ -376,6 +383,32 @@ def connected_count():
                if d.get("usage_page") == 0x01 and d.get("usage") == 0x05)
 
 
+def connected_in_switch_mode_count():
+    """How many 8BitDo 64s are plugged in but stuck in Nintendo-emulation
+    (S position on the back switch). The firmware updater can't reach them
+    there — they'd need to be flipped to D first. UI layer uses this to
+    explain a "0 connected" state instead of failing silently.
+
+    Note: in S mode the pad reports as usage page 0x01 / usage 0x04
+    (Joystick), NOT 0x05 (Game pad) like D mode. The Nintendo N64
+    Controller VID:PID (057e:2019) is narrow enough on its own that
+    we don't need a usage filter, so we deduplicate by the (vid, pid,
+    path-prefix) instead — multiple HID interfaces would otherwise
+    double-count each physical device."""
+    if hid is None:
+        return 0
+    # One physical device often exposes multiple HID interfaces; dedupe by
+    # the USB port path (everything up to the &MI_##).
+    seen = set()
+    for d in hid.enumerate(SWITCH_MODE_VID, SWITCH_MODE_PID):
+        path = d.get("path", b"")
+        if isinstance(path, bytes):
+            path = path.decode("ascii", errors="ignore")
+        key = path.split("&mi_")[0].split("&MI_")[0]
+        seen.add(key)
+    return len(seen)
+
+
 def _wait_until_ready(expected, timeout=90):
     """After a flash reboots a controller, wait until `expected` controllers are
     actually responsive (each opens and answers a version read) - not just
@@ -620,6 +653,17 @@ def run_interactive():
             return
         _run_update_all()
         return
+
+    # 0 in D mode but N in S mode → tell the user the actual fix instead of
+    # falling into the generic "USB-C *data* cable" tip via ControllerError.
+    if n == 0:
+        ns = connected_in_switch_mode_count()
+        if ns:
+            pl = "controller" if ns == 1 else "controllers"
+            print(f"\n{ns} 8BitDo 64 {pl} detected in Switch (S) mode — "
+                  f"the firmware updater can't reach them there. "
+                  f"Flip the back switch to D (DInput) and re-plug the USB-C cable.")
+            return
 
     try:
         dev = EightBitDo64().open()
