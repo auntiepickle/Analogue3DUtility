@@ -57,10 +57,40 @@ _FOLDER_RE = re.compile(r"^(.+?)\s+([0-9a-f]{8})$")
 # constructing settings.json paths.
 GAMES_REL = os.path.join("Library", "N64", "Games")
 
-# Trailing-comma cleanup for what the console writes. JSON5/JSONC parsers
-# exist but we don't want a dep — stripping `,` before `}` or `]` is enough
-# for the shapes the Analogue 3D writes.
-_TRAIL_COMMA = re.compile(r",(\s*[}\]])")
+def _strip_trailing_commas(raw):
+    """Strip JSON trailing commas (before `}` or `]`) while leaving string
+    contents alone. A regex like `,(\\s*[}\\]])` would also clobber a comma
+    inside a string value of the form `"foo,]"`. Cheap state machine instead."""
+    out = []
+    i, n = 0, len(raw)
+    in_str = False
+    escape = False
+    while i < n:
+        c = raw[i]
+        if in_str:
+            out.append(c)
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c); i += 1; continue
+        if c == ",":
+            # Lookahead past whitespace; drop the comma if next non-ws is ] or }.
+            j = i + 1
+            while j < n and raw[j] in " \t\r\n":
+                j += 1
+            if j < n and raw[j] in "}]":
+                i += 1   # skip the comma
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 # ----------------------------------------------------------------------
@@ -201,9 +231,15 @@ def card_carts(root):
     if not os.path.isdir(games_dir):
         return []
     out = []
+    games_dir_real = os.path.realpath(games_dir)
     for name in sorted(os.listdir(games_dir)):
         folder = os.path.join(games_dir, name)
         if not os.path.isdir(folder):
+            continue
+        # Skip symlinks that point outside the card — we don't want
+        # apply_collections following a user-placed symlink and writing
+        # settings.json files into unrelated parts of their filesystem.
+        if os.path.islink(folder) and not os.path.realpath(folder).startswith(games_dir_real):
             continue
         m = _FOLDER_RE.match(name)
         if not m:
@@ -228,12 +264,13 @@ def _read_existing(path):
     """Tolerantly read an Analogue-3D-written settings.json.
 
     The console writes JSON with trailing commas, which strict json.loads
-    rejects. We strip those before parsing so a round-trip via this module
-    preserves console-set fields the user wants to keep."""
+    rejects. We strip those (string-aware) before parsing so a round-trip
+    via this module preserves console-set fields the user wants to keep."""
     if not os.path.isfile(path):
         return {}
     try:
-        raw = open(path, "r", encoding="utf-8").read()
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
     except OSError:
         return {}
     if not raw.strip():
@@ -242,7 +279,7 @@ def _read_existing(path):
         return json.loads(raw)
     except ValueError:
         try:
-            return json.loads(_TRAIL_COMMA.sub(r"\1", raw))
+            return json.loads(_strip_trailing_commas(raw))
         except ValueError:
             return {}
 
@@ -250,7 +287,15 @@ def _read_existing(path):
 def _deep_merge(base, overlay):
     """Per-key overlay: dicts merge recursively; everything else overwrites.
     `overlay` wins where both have the same key. Returns a new dict; inputs
-    are not mutated."""
+    are not mutated.
+
+    Semantic notes for future contributors:
+    - Lists REPLACE wholesale (no append). The N64 settings schema has no
+      list fields today; if one is added, decide whether the desired
+      semantic is replace, append, or set-union and update this function.
+    - An explicit `None` in overlay WIPES the corresponding base key
+      (writes null over a subtree). Collections should omit a key to
+      preserve the base, not set it to null."""
     if not isinstance(base, dict):
         return overlay
     out = dict(base)
@@ -265,13 +310,26 @@ def _deep_merge(base, overlay):
 def _write_atomic(path, data):
     """Settings files live on the SD card — power loss mid-write would
     corrupt a single game's config. Write to a sibling tempfile and rename
-    so the on-disk file is always a complete document or untouched."""
+    so the on-disk file is always a complete document or untouched.
+
+    Caveat: `os.replace` is atomic on POSIX and NTFS, but the SD card is
+    usually FAT32/exFAT, where rename is a metadata update without a
+    journal guarantee. A power loss during the rename can leave EITHER
+    the old or new file, but not a half-written hybrid (the prior write
+    is what would be lost). The on-disk corruption window we're guarding
+    against — partial JSON — is fully covered."""
     tmp = path + ".tmp"
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        # Don't leave a stray .tmp lying around if dump or replace failed.
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 
 
 # ----------------------------------------------------------------------
@@ -355,11 +413,19 @@ def apply_collections(root, collection_ids, snapshot=True, force=False,
 
     `snapshot=True` (default) takes a Memories snapshot first via the
     existing savestates.archive_all path, so the user can always revert.
+    A fresh card with no Memories returns (None, 0) from archive_all —
+    no exception, and apply continues; summary["snapshot"] stays None
+    in that case so the caller can see no backup was actually written.
 
-    `force=True` ignores existing user customisations and writes the
-    collection's settings as-is (still merged across collections in
-    `collection_ids` order). Default `force=False` keeps any existing
-    user-set keys the collections don't touch.
+    `force=True` IGNORES the cart's existing settings.json entirely.
+    The written file is the recommended dict alone (merged across
+    `collection_ids` in order). Use sparingly — UI should label this as
+    "replace ALL settings", not just "override collection-touched keys",
+    because EVERY key not in the recommendation is wiped.
+
+    `force=False` (default) preserves any user-set keys the collections
+    don't touch — collection settings overlay on top of what's there
+    via per-key deep-merge.
 
     Returns:
 
