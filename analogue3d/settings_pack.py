@@ -32,11 +32,45 @@ customised are PRESERVED at every key the collections don't touch
 import json
 import os
 import re
+import stat
 import time
 import urllib.parse
 import urllib.request
 
 from . import config
+
+
+def _robust_unlink(path, attempts=10, delay=0.15):
+    """Delete a file, working around two Windows gotchas:
+
+      * a read-only attribute (cleared before retrying), and
+      * "the process cannot access the file because it is being used by another
+        process" (WinError 32) — antivirus/Search indexer/a just-closed reader
+        briefly hold a handle on an SD card, and Windows refuses the delete
+        until it's released.
+
+    Retries with a short backoff so a transient lock can't silently abort the
+    delete. Raises the last error only if every attempt fails. Treats an
+    already-absent file as success."""
+    last = None
+    for _ in range(attempts):
+        try:
+            os.unlink(path)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError as e:
+            last = e
+            try:
+                os.chmod(path, stat.S_IWRITE)   # clear read-only, then retry
+            except OSError:
+                pass
+            time.sleep(delay)
+        except OSError as e:
+            last = e
+            time.sleep(delay)
+    if last:
+        raise last
 
 # Defaults; can be overridden by the caller passing repo=… (e.g. for a fork).
 SETTINGS_REPO = "auntiepickle/Analogue3DSettings"
@@ -324,7 +358,21 @@ def _write_atomic(path, data):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.write("\n")
-        os.replace(tmp, path)
+        # Same Windows lock as deletes: if the existing settings.json is briefly
+        # held open (antivirus/indexer), os.replace raises WinError 32. Retry.
+        last = None
+        for _ in range(10):
+            try:
+                os.replace(tmp, path)
+                last = None
+                break
+            except PermissionError as e:
+                last = e
+                try: os.chmod(path, stat.S_IWRITE)
+                except OSError: pass
+                time.sleep(0.15)
+        if last:
+            raise last
     except Exception:
         # Don't leave a stray .tmp lying around if dump or replace failed.
         try: os.unlink(tmp)
@@ -623,10 +671,7 @@ def revert_collections(root, collection_ids, snapshot=True, progress=None, repo=
             if new_current:
                 _write_atomic(cart["settings_path"], new_current)
             else:
-                try:
-                    os.unlink(cart["settings_path"])
-                except FileNotFoundError:
-                    pass
+                _robust_unlink(cart["settings_path"])
             summary["reverted"].append({"cart_id": cart_id, "title": cart["title"],
                                         "removed": removed,
                                         "settings_path": cart["settings_path"]})
@@ -675,7 +720,7 @@ def reset_all(root, snapshot=True):
                                        "title": cart["title"], "reason": "no_settings"})
             continue
         try:
-            os.unlink(cart["settings_path"])
+            _robust_unlink(cart["settings_path"])
             summary["reset"].append({"cart_id": cart["cart_id"], "title": cart["title"],
                                      "settings_path": cart["settings_path"]})
         except FileNotFoundError:
