@@ -639,3 +639,49 @@ def revert_collections(root, collection_ids, snapshot=True, progress=None, repo=
         except Exception:
             pass
     return summary
+
+
+def reset_all(root, snapshot=True):
+    """Remove every settings.json on the card, returning all carts to the
+    console's defaults — a full "unapply", regardless of which collection (if
+    any) wrote them. This also clears settings the user set by hand, so callers
+    must warn clearly. Backs up existing settings first.
+
+    Returns:
+        {
+          "reset":    [{cart_id, title, settings_path}, ...],
+          "skipped":  [{cart_id, title, reason}, ...],   # "no_settings"
+          "errors":   [{cart_id, title, error}, ...],
+          "settings_backup": {"path": "...", "count": N} | None,
+        }
+    """
+    summary = {"reset": [], "skipped": [], "errors": [], "settings_backup": None}
+
+    if snapshot:
+        try:
+            bpath, bcount = backup_settings_json(root)
+            if bpath:
+                summary["settings_backup"] = {"path": bpath, "count": bcount}
+        except Exception as e:
+            return {**summary, "errors": [
+                {"cart_id": None, "title": None,
+                 "error": f"Pre-reset settings backup failed: {e}. "
+                          "Refusing to delete without a backup. "
+                          "Pass snapshot=False to override."}]}
+
+    for cart in card_carts(root):
+        if not cart["has_existing_settings"]:
+            summary["skipped"].append({"cart_id": cart["cart_id"],
+                                       "title": cart["title"], "reason": "no_settings"})
+            continue
+        try:
+            os.unlink(cart["settings_path"])
+            summary["reset"].append({"cart_id": cart["cart_id"], "title": cart["title"],
+                                     "settings_path": cart["settings_path"]})
+        except FileNotFoundError:
+            summary["skipped"].append({"cart_id": cart["cart_id"],
+                                       "title": cart["title"], "reason": "no_settings"})
+        except OSError as e:
+            summary["errors"].append({"cart_id": cart["cart_id"],
+                                      "title": cart["title"], "error": str(e)})
+    return summary
