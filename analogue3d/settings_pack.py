@@ -406,16 +406,41 @@ def _diff(a, b, prefix=""):
     return out
 
 
+def backup_settings_json(root):
+    """Zip every existing settings.json on the card into one timestamped backup
+    in the app's backup folder before we modify any of them. Returns
+    (zip_path, count), or (None, 0) when the card has no settings files yet
+    (nothing to lose). Unlike a save-state snapshot, this actually contains the
+    files apply/revert change, so it's a real recovery point."""
+    import zipfile
+    from datetime import datetime
+    from . import savestates
+    paths = [c["settings_path"] for c in card_carts(root)
+             if c["has_existing_settings"]]
+    if not paths:
+        return (None, 0)
+    backup_dir = savestates._backup_dir()
+    os.makedirs(backup_dir, exist_ok=True)
+    base = os.path.join(root, GAMES_REL)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    zip_path = os.path.join(backup_dir, f"settings_{stamp}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in paths:
+            arc = os.path.relpath(p, base).replace(os.sep, "/")
+            z.write(p, arc)
+    return (zip_path, len(paths))
+
+
 def apply_collections(root, collection_ids, snapshot=True, force=False,
                       progress=None, repo=None):
     """Apply the chosen collections (in the given order) to every cart on
     the card that has a matching recommendation.
 
-    `snapshot=True` (default) takes a Memories snapshot first via the
-    existing savestates.archive_all path, so the user can always revert.
-    A fresh card with no Memories returns (None, 0) from archive_all —
-    no exception, and apply continues; summary["snapshot"] stays None
-    in that case so the caller can see no backup was actually written.
+    `snapshot=True` (default) zips every existing settings.json on the card
+    first (backup_settings_json), so the user can recover their pre-apply
+    settings — the real files being changed, not save states. A card with no
+    settings files yet returns (None, 0); apply continues and
+    summary["settings_backup"] stays None (nothing to back up).
 
     `force=True` IGNORES the cart's existing settings.json entirely.
     The written file is the recommended dict alone (merged across
@@ -433,24 +458,21 @@ def apply_collections(root, collection_ids, snapshot=True, force=False,
           "applied":  [{cart_id, title, sources, settings_path}, ...],
           "skipped":  [{cart_id, title, reason}, ...],
           "errors":   [{cart_id, title, error}, ...],
-          "snapshot": {"path": "...", "count": N} | None,
+          "settings_backup": {"path": "...", "count": N} | None,
         }
     """
-    summary = {"applied": [], "skipped": [], "errors": [], "snapshot": None}
+    summary = {"applied": [], "skipped": [], "errors": [], "settings_backup": None}
 
     if snapshot:
-        # Local import to dodge a startup cycle — savestates pulls in zipfile,
-        # PIL, and a few other heavy modules we don't want on every import.
-        from . import savestates
         try:
-            snap_path, n = savestates.archive_all(root)
-            if snap_path:
-                summary["snapshot"] = {"path": snap_path, "count": n}
+            bpath, bcount = backup_settings_json(root)
+            if bpath:
+                summary["settings_backup"] = {"path": bpath, "count": bcount}
         except Exception as e:
             return {**summary, "errors": [
                 {"cart_id": None, "title": None,
-                 "error": f"Pre-apply snapshot failed: {e}. "
-                          "Refusing to write settings without a backup. "
+                 "error": f"Pre-apply settings backup failed: {e}. "
+                          "Refusing to write without a backup. "
                           "Pass snapshot=False to override."}]}
 
     collections_data = []
@@ -481,12 +503,133 @@ def apply_collections(root, collection_ids, snapshot=True, force=False,
             continue
         base = {} if force else _read_existing(cart["settings_path"])
         merged = _deep_merge(base, recommended)
+        # Don't touch the SD card if the cart already has these exact settings —
+        # rewriting an identical file is a pointless write (and a needless mtime
+        # bump on flash). Only force-mode, which replaces wholesale, always writes.
+        if not force and merged == base:
+            summary["skipped"].append({"cart_id": cart_id, "title": cart["title"],
+                                       "reason": "already_applied"})
+            continue
         try:
             _write_atomic(cart["settings_path"], merged)
             summary["applied"].append({
                 "cart_id": cart_id, "title": cart["title"],
                 "sources": sources, "settings_path": cart["settings_path"],
             })
+        except OSError as e:
+            summary["errors"].append({"cart_id": cart_id, "title": cart["title"],
+                                      "error": str(e)})
+    if progress:
+        try:
+            progress(total, total, None)
+        except Exception:
+            pass
+    return summary
+
+
+# ----------------------------------------------------------------------
+# Revert
+# ----------------------------------------------------------------------
+
+def _strip_recommended(current, recommended):
+    """Remove from `current` every leaf that `recommended` set AND that still
+    holds the recommended value, so a revert undoes exactly what a collection
+    applied without clobbering values the user changed afterwards. Empty dicts
+    are pruned. Returns (new_current, removed_count); inputs aren't mutated."""
+    removed = 0
+
+    def walk(cur, rec):
+        nonlocal removed
+        out = {}
+        for k, v in cur.items():
+            if k in rec:
+                rv = rec[k]
+                if isinstance(v, dict) and isinstance(rv, dict):
+                    sub = walk(v, rv)
+                    if sub:
+                        out[k] = sub          # keep whatever didn't match
+                    continue                  # else prune the now-empty subtree
+                if v == rv:                   # same equality apply/_diff use
+                    removed += 1
+                    continue                  # this leaf was our applied value — drop it
+            out[k] = v                        # untouched key, or user-changed value
+        return out
+
+    return walk(current or {}, recommended or {}), removed
+
+
+def revert_collections(root, collection_ids, snapshot=True, progress=None, repo=None):
+    """Undo a previous apply: for every cart, remove the values the given
+    collections wrote (where the cart still holds them). A cart whose
+    settings.json ends up empty has the file deleted, reverting it to the
+    console's defaults. User-set keys the collections never touched, and values
+    the user changed after applying, are preserved.
+
+    Returns:
+        {
+          "reverted": [{cart_id, title, removed, settings_path}, ...],
+          "skipped":  [{cart_id, title, reason}, ...],   # no_recommendation | not_applied
+          "errors":   [{cart_id, title, error}, ...],
+          "settings_backup": {"path": "...", "count": N} | None,
+        }
+    """
+    summary = {"reverted": [], "skipped": [], "errors": [], "settings_backup": None}
+
+    if snapshot:
+        try:
+            bpath, bcount = backup_settings_json(root)
+            if bpath:
+                summary["settings_backup"] = {"path": bpath, "count": bcount}
+        except Exception as e:
+            return {**summary, "errors": [
+                {"cart_id": None, "title": None,
+                 "error": f"Pre-revert settings backup failed: {e}. "
+                          "Refusing to write without a backup. "
+                          "Pass snapshot=False to override."}]}
+
+    collections_data = []
+    for cid in collection_ids:
+        try:
+            data = fetch_collection(cid, repo=repo)
+            data["_id"] = cid
+            collections_data.append(data)
+        except Exception as e:
+            summary["errors"].append({"cart_id": None, "title": None,
+                                      "error": f"Couldn't fetch collection {cid!r}: {e}"})
+    if not collections_data:
+        return summary
+
+    carts = card_carts(root)
+    total = len(carts)
+    for i, cart in enumerate(carts):
+        if progress:
+            try:
+                progress(i, total, cart["title"])
+            except Exception:
+                pass
+        cart_id = cart["cart_id"]
+        recommended, _sources = _resolve_recommended(collections_data, cart_id)
+        if not recommended:
+            summary["skipped"].append({"cart_id": cart_id, "title": cart["title"],
+                                       "reason": "no_recommendation"})
+            continue
+        current = _read_existing(cart["settings_path"])
+        new_current, removed = _strip_recommended(current, recommended)
+        if removed == 0:
+            summary["skipped"].append({"cart_id": cart_id, "title": cart["title"],
+                                       "reason": "not_applied"})
+            continue
+        try:
+            if new_current:
+                _write_atomic(cart["settings_path"], new_current)
+            else:
+                try:
+                    os.unlink(cart["settings_path"])
+                except FileNotFoundError:
+                    pass
+            summary["reverted"].append({"cart_id": cart_id, "title": cart["title"],
+                                        "removed": removed,
+                                        "settings_path": cart["settings_path"]})
         except OSError as e:
             summary["errors"].append({"cart_id": cart_id, "title": cart["title"],
                                       "error": str(e)})
