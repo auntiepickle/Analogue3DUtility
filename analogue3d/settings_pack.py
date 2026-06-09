@@ -365,18 +365,21 @@ def _write_atomic(path, data):
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.write("\n")
         # Same Windows lock as deletes: if the existing settings.json is briefly
-        # held open (antivirus/indexer), os.replace raises WinError 32. Retry.
+        # held open (antivirus/indexer), os.replace raises WinError 32. Retry with
+        # the same ~8s budget + gc.collect() the delete path uses.
         last = None
-        for _ in range(10):
+        for i in range(32):
             try:
                 os.replace(tmp, path)
                 last = None
                 break
-            except PermissionError as e:
+            except OSError as e:
                 last = e
-                try: os.chmod(path, stat.S_IWRITE)
-                except OSError: pass
-                time.sleep(0.15)
+                if i == 0:
+                    try: os.chmod(path, stat.S_IWRITE)
+                    except OSError: pass
+                gc.collect()
+                time.sleep(0.25)
         if last:
             raise last
     except Exception:
@@ -478,30 +481,46 @@ def backup_settings_json(root):
     base = os.path.join(root, GAMES_REL)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     zip_path = os.path.join(backup_dir, f"settings_{stamp}.zip")
+    seq = 1
+    while os.path.exists(zip_path):        # never silently overwrite a same-second backup
+        zip_path = os.path.join(backup_dir, f"settings_{stamp}_{seq}.zip")
+        seq += 1
     written = 0
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in paths:
-            arc = os.path.relpath(p, base).replace(os.sep, "/")
-            try:
-                with open(p, "rb") as fh:
-                    data = fh.read()
-            except OSError:
-                continue
-            # Build the entry by hand rather than z.write(): ZipInfo.from_file
-            # calls time.localtime(st_mtime), which raises [Errno 22] when the
-            # Analogue 3D wrote the file with an out-of-range RTC timestamp
-            # (e.g. the 1601 epoch when the console clock was never set). A fixed,
-            # valid date_time sidesteps that so one bad file can't abort the backup.
-            zi = zipfile.ZipInfo(arc)            # date_time defaults to 1980-01-01
-            zi.compress_type = zipfile.ZIP_DEFLATED
-            z.writestr(zi, data)
-            written += 1
-    if not written:
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            for p in paths:
+                arc = os.path.relpath(p, base).replace(os.sep, "/")
+                # Every existing file MUST make it into the backup, or we abort:
+                # silently skipping an unreadable file would let the caller delete/
+                # overwrite it with no recovery copy. Retry the read past a transient
+                # lock, then raise (caller refuses to mutate without a full backup).
+                data = None
+                for _ in range(8):
+                    try:
+                        with open(p, "rb") as fh:
+                            data = fh.read()
+                        break
+                    except OSError:
+                        gc.collect()
+                        time.sleep(0.25)
+                if data is None:
+                    raise OSError(f"could not read {arc} for backup")
+                # Build the entry by hand rather than z.write(): ZipInfo.from_file
+                # calls time.localtime(st_mtime), which raises [Errno 22] when the
+                # Analogue 3D wrote the file with an out-of-range RTC timestamp
+                # (e.g. the 1601 epoch when the console clock was never set). A fixed,
+                # valid date_time sidesteps that.
+                zi = zipfile.ZipInfo(arc)            # date_time defaults to 1980-01-01
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(zi, data)
+                written += 1
+    except Exception:
+        # Don't leave a partial/truncated recovery point behind.
         try:
             os.unlink(zip_path)
         except OSError:
             pass
-        return (None, 0)
+        raise
     return (zip_path, written)
 
 
@@ -590,7 +609,7 @@ def apply_collections(root, collection_ids, snapshot=True, force=False,
                 "cart_id": cart_id, "title": cart["title"],
                 "sources": sources, "settings_path": cart["settings_path"],
             })
-        except OSError as e:
+        except Exception as e:
             summary["errors"].append({"cart_id": cart_id, "title": cart["title"],
                                       "error": str(e)})
     if progress:
@@ -701,7 +720,7 @@ def revert_collections(root, collection_ids, snapshot=True, progress=None, repo=
             summary["reverted"].append({"cart_id": cart_id, "title": cart["title"],
                                         "removed": removed,
                                         "settings_path": cart["settings_path"]})
-        except OSError as e:
+        except Exception as e:
             summary["errors"].append({"cart_id": cart_id, "title": cart["title"],
                                       "error": str(e)})
     if progress:
@@ -752,7 +771,7 @@ def reset_all(root, snapshot=True):
         except FileNotFoundError:
             summary["skipped"].append({"cart_id": cart["cart_id"],
                                        "title": cart["title"], "reason": "no_settings"})
-        except OSError as e:
+        except Exception as e:
             summary["errors"].append({"cart_id": cart["cart_id"],
                                       "title": cart["title"], "error": str(e)})
     return summary
