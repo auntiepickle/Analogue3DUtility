@@ -478,11 +478,31 @@ def backup_settings_json(root):
     base = os.path.join(root, GAMES_REL)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     zip_path = os.path.join(backup_dir, f"settings_{stamp}.zip")
+    written = 0
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for p in paths:
             arc = os.path.relpath(p, base).replace(os.sep, "/")
-            z.write(p, arc)
-    return (zip_path, len(paths))
+            try:
+                with open(p, "rb") as fh:
+                    data = fh.read()
+            except OSError:
+                continue
+            # Build the entry by hand rather than z.write(): ZipInfo.from_file
+            # calls time.localtime(st_mtime), which raises [Errno 22] when the
+            # Analogue 3D wrote the file with an out-of-range RTC timestamp
+            # (e.g. the 1601 epoch when the console clock was never set). A fixed,
+            # valid date_time sidesteps that so one bad file can't abort the backup.
+            zi = zipfile.ZipInfo(arc)            # date_time defaults to 1980-01-01
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(zi, data)
+            written += 1
+    if not written:
+        try:
+            os.unlink(zip_path)
+        except OSError:
+            pass
+        return (None, 0)
+    return (zip_path, written)
 
 
 def apply_collections(root, collection_ids, snapshot=True, force=False,
