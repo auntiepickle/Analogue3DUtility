@@ -29,6 +29,7 @@ customised are PRESERVED at every key the collections don't touch
 (per-key overlay, not whole-object replace) unless force=True.
 """
 
+import errno
 import gc
 import json
 import os
@@ -39,6 +40,15 @@ import urllib.parse
 import urllib.request
 
 from . import config
+
+
+def _is_lock_error(e):
+    """True only for the transient Windows sharing-violation / access-denied we
+    should retry (a scanner/indexer holding the file, or a read-only bit). False
+    for permanent failures — no space, read-only volume, cross-device — which
+    should fail fast instead of spinning the full retry budget per cart."""
+    return (getattr(e, "winerror", None) in (5, 32)
+            or getattr(e, "errno", None) in (errno.EACCES, errno.EBUSY))
 
 
 def _robust_unlink(path, attempts=32, delay=0.25):
@@ -63,17 +73,16 @@ def _robust_unlink(path, attempts=32, delay=0.25):
             return
         except FileNotFoundError:
             return
-        except PermissionError as e:
+        except OSError as e:
             last = e
+            if not _is_lock_error(e):
+                raise                               # permanent error — fail fast
             if i == 0:
                 try:
                     os.chmod(path, stat.S_IWRITE)   # clear read-only once
                 except OSError:
                     pass
             gc.collect()                            # finalise any stray handle in-process
-            time.sleep(delay)
-        except OSError as e:
-            last = e
             time.sleep(delay)
     if last:
         raise last
@@ -375,6 +384,8 @@ def _write_atomic(path, data):
                 break
             except OSError as e:
                 last = e
+                if not _is_lock_error(e):
+                    break                       # permanent (no space / read-only) — fail fast
                 if i == 0:
                     try: os.chmod(path, stat.S_IWRITE)
                     except OSError: pass
@@ -463,17 +474,22 @@ def _diff(a, b, prefix=""):
     return out
 
 
-def backup_settings_json(root):
+def backup_settings_json(root, carts=None):
     """Zip every existing settings.json on the card into one timestamped backup
     in the app's backup folder before we modify any of them. Returns
     (zip_path, count), or (None, 0) when the card has no settings files yet
     (nothing to lose). Unlike a save-state snapshot, this actually contains the
-    files apply/revert change, so it's a real recovery point."""
+    files apply/revert change, so it's a real recovery point.
+
+    `carts` lets the caller pass the SAME card_carts() snapshot it will mutate,
+    so the set of files backed up exactly matches the set that gets written/
+    deleted (no second walk = no backup-vs-mutate TOCTOU)."""
     import zipfile
     from datetime import datetime
     from . import savestates
-    paths = [c["settings_path"] for c in card_carts(root)
-             if c["has_existing_settings"]]
+    if carts is None:
+        carts = card_carts(root)
+    paths = [c["settings_path"] for c in carts if c["has_existing_settings"]]
     if not paths:
         return (None, 0)
     backup_dir = savestates._backup_dir()
@@ -495,16 +511,20 @@ def backup_settings_json(root):
                 # overwrite it with no recovery copy. Retry the read past a transient
                 # lock, then raise (caller refuses to mutate without a full backup).
                 data = None
+                last = None
                 for _ in range(8):
                     try:
                         with open(p, "rb") as fh:
                             data = fh.read()
                         break
-                    except OSError:
+                    except OSError as e:
+                        last = e
+                        if not _is_lock_error(e):
+                            break               # permanent — stop retrying, abort below
                         gc.collect()
                         time.sleep(0.25)
                 if data is None:
-                    raise OSError(f"could not read {arc} for backup")
+                    raise OSError(f"could not read {arc} for backup") from last
                 # Build the entry by hand rather than z.write(): ZipInfo.from_file
                 # calls time.localtime(st_mtime), which raises [Errno 22] when the
                 # Analogue 3D wrote the file with an out-of-range RTC timestamp
@@ -556,9 +576,13 @@ def apply_collections(root, collection_ids, snapshot=True, force=False,
     """
     summary = {"applied": [], "skipped": [], "errors": [], "settings_backup": None}
 
+    # Walk the card ONCE and back up exactly this snapshot, so the set of files
+    # captured matches the set mutated below (no backup-vs-mutate TOCTOU).
+    carts = card_carts(root)
+
     if snapshot:
         try:
-            bpath, bcount = backup_settings_json(root)
+            bpath, bcount = backup_settings_json(root, carts=carts)
             if bpath:
                 summary["settings_backup"] = {"path": bpath, "count": bcount}
         except Exception as e:
@@ -580,7 +604,6 @@ def apply_collections(root, collection_ids, snapshot=True, force=False,
     if not collections_data:
         return summary
 
-    carts = card_carts(root)
     total = len(carts)
     for i, cart in enumerate(carts):
         if progress:
@@ -668,9 +691,12 @@ def revert_collections(root, collection_ids, snapshot=True, progress=None, repo=
     """
     summary = {"reverted": [], "skipped": [], "errors": [], "settings_backup": None}
 
+    # One card snapshot for both backup and mutation (no TOCTOU between them).
+    carts = card_carts(root)
+
     if snapshot:
         try:
-            bpath, bcount = backup_settings_json(root)
+            bpath, bcount = backup_settings_json(root, carts=carts)
             if bpath:
                 summary["settings_backup"] = {"path": bpath, "count": bcount}
         except Exception as e:
@@ -692,7 +718,6 @@ def revert_collections(root, collection_ids, snapshot=True, progress=None, repo=
     if not collections_data:
         return summary
 
-    carts = card_carts(root)
     total = len(carts)
     for i, cart in enumerate(carts):
         if progress:
@@ -747,9 +772,14 @@ def reset_all(root, snapshot=True):
     """
     summary = {"reset": [], "skipped": [], "errors": [], "settings_backup": None}
 
+    # One card snapshot for both backup and delete (no TOCTOU between them): a
+    # cart that appears after this walk simply isn't in `carts`, so it can't be
+    # deleted without having been backed up.
+    carts = card_carts(root)
+
     if snapshot:
         try:
-            bpath, bcount = backup_settings_json(root)
+            bpath, bcount = backup_settings_json(root, carts=carts)
             if bpath:
                 summary["settings_backup"] = {"path": bpath, "count": bcount}
         except Exception as e:
@@ -759,7 +789,7 @@ def reset_all(root, snapshot=True):
                           "Refusing to delete without a backup. "
                           "Pass snapshot=False to override."}]}
 
-    for cart in card_carts(root):
+    for cart in carts:
         if not cart["has_existing_settings"]:
             summary["skipped"].append({"cart_id": cart["cart_id"],
                                        "title": cart["title"], "reason": "no_settings"})
