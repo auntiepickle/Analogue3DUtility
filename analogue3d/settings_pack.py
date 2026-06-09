@@ -29,6 +29,7 @@ customised are PRESERVED at every key the collections don't touch
 (per-key overlay, not whole-object replace) unless force=True.
 """
 
+import gc
 import json
 import os
 import re
@@ -40,20 +41,23 @@ import urllib.request
 from . import config
 
 
-def _robust_unlink(path, attempts=10, delay=0.15):
+def _robust_unlink(path, attempts=32, delay=0.25):
     """Delete a file, working around two Windows gotchas:
 
       * a read-only attribute (cleared before retrying), and
       * "the process cannot access the file because it is being used by another
-        process" (WinError 32) — antivirus/Search indexer/a just-closed reader
-        briefly hold a handle on an SD card, and Windows refuses the delete
-        until it's released.
+        process" (WinError 32) — on an SD card, antivirus/Defender scans a file
+        on-access for a few SECONDS after it's read (e.g. by the pre-delete
+        backup), and the Search indexer or a not-yet-finalised reader can hold a
+        handle too. Windows refuses the delete until every handle without
+        share-delete is gone.
 
-    Retries with a short backoff so a transient lock can't silently abort the
-    delete. Raises the last error only if every attempt fails. Treats an
-    already-absent file as success."""
+    Retries with a backoff long enough (~8s) to outlast a multi-second scan, and
+    runs gc.collect() each round so any unreferenced file object still pinning a
+    handle in this process is finalised. Raises the last error only if every
+    attempt fails; treats an already-absent file as success."""
     last = None
-    for _ in range(attempts):
+    for i in range(attempts):
         try:
             os.unlink(path)
             return
@@ -61,10 +65,12 @@ def _robust_unlink(path, attempts=10, delay=0.15):
             return
         except PermissionError as e:
             last = e
-            try:
-                os.chmod(path, stat.S_IWRITE)   # clear read-only, then retry
-            except OSError:
-                pass
+            if i == 0:
+                try:
+                    os.chmod(path, stat.S_IWRITE)   # clear read-only once
+                except OSError:
+                    pass
+            gc.collect()                            # finalise any stray handle in-process
             time.sleep(delay)
         except OSError as e:
             last = e
