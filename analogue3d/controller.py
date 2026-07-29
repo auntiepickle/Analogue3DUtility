@@ -67,7 +67,7 @@ FIRMWARE_TYPE = 78
 # 8BitDo publishes is flagged as "untested" until a maintainer validates it and
 # bumps this value; the non-interactive flows (--auto, update-all) never flash
 # past it. See the "Supported firmware" section of the README.
-MAX_TESTED_VERSION = 204  # v2.04
+MAX_TESTED_VERSION = 205  # v2.05 (validated on hardware 2026-07-29: 2.04 -> 2.05 via update_all_to)
 # Legacy firmware feed (queried with a "Type: 78" header). 8BitDo stopped
 # publishing N64 releases here after 2.04 — kept only as a fallback.
 FIRMWARE_API = "http://dl.8bitdo.com:8080/firmware/select"

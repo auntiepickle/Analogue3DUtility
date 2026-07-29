@@ -181,7 +181,7 @@ for a specific version — connect just one controller when you want to pick a v
 
 ### Supported firmware
 
-This tool is verified against firmware **up to v2.04**. When 8BitDo publishes
+This tool is verified against firmware **up to v2.05**. When 8BitDo publishes
 something newer, the interactive menu will still list it but tag it
 **`untested`** and warn before flashing it. The non-interactive flows (`--auto`
 and the multi-controller "update all") never flash past the tested ceiling —
