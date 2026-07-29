@@ -328,13 +328,15 @@ def fetch_firmware_meta(beta=False):
     return fetch_firmware_list(beta)[0]
 
 
-def _latest_tested(versions):
+def latest_tested(versions):
     """Newest release this tool's flash path has been validated against
     (version_int <= MAX_TESTED_VERSION), or None if every published release
     is newer than that. The non-interactive flows flash this instead of the
     absolute newest, so a release 8BitDo published yesterday is never applied
     without a human explicitly choosing it — the interactive menu still
-    offers untested releases, tagged and with a warning."""
+    offers untested releases, tagged and with a warning. Public so frontends
+    (e.g. the desktop app) can compute "up to date" against the same ceiling
+    the update flows actually flash to."""
     for e in versions:  # newest-first
         if e["version_int"] <= MAX_TESTED_VERSION:
             return e
@@ -566,7 +568,7 @@ def update_to_latest(progress=None):
     try:
         versions = fetch_firmware_list()
         newest = versions[0]["version_int"]
-        latest = _latest_tested(versions)
+        latest = latest_tested(versions)
         if latest is None:
             return (f"skipped ({format_version(newest)} is available but untested "
                     f"by this tool - flash it from the controller menu)")
@@ -608,7 +610,7 @@ def update_all(progress=None, announce=None):
     except (requests.RequestException, ControllerError, ValueError) as e:
         return {"total": total, "updated": 0, "already": 0, "failed": 0, "note": f"firmware fetch failed: {e}"}
     newest = versions[0]["version_int"]
-    latest = _latest_tested(versions)
+    latest = latest_tested(versions)
     if latest is None:
         return {"total": total, "updated": 0, "already": 0, "failed": 0,
                 "note": (f"{format_version(newest)} is available but untested by this "
@@ -895,7 +897,8 @@ def run_interactive():
 
 __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
-    "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
+    "fetch_firmware_list", "fetch_firmware_meta", "latest_tested",
+    "MAX_TESTED_VERSION", "download_firmware",
     "parse_header", "flash", "reopen_and_read_version", "run_interactive",
     "is_connected", "connected_count", "update_to_latest", "update_all",
     "update_all_to",
