@@ -108,6 +108,8 @@ def _auto_all():
             if s.get("failed"):
                 msg += f", {s['failed']} failed"
             (ui.warn if s.get("failed") else ui.ok)(msg)
+            if s.get("note"):
+                ui.info(f"Controller: {s['note']}")
 
     ui.ok("SD tasks complete.")
     ui.info("Safely eject the card.")
