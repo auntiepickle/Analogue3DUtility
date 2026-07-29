@@ -181,11 +181,18 @@ for a specific version — connect just one controller when you want to pick a v
 
 ### Supported firmware
 
-This tool is verified against firmware **up to v2.04**. When 8BitDo publishes
-something newer, the tool will still list it but tag it **`untested`** and warn
-before flashing it. The maintainer bumps the tested ceiling
-(`MAX_TESTED_VERSION` in `controller.py`) as each new release is
-validated on real hardware.
+This tool is verified against firmware **up to v2.05**. When 8BitDo publishes
+something newer, the interactive menu will still list it but tag it
+**`untested`** and warn before flashing it. The non-interactive flows (`--auto`
+and the multi-controller "update all") never flash past the tested ceiling —
+they stop at the newest tested release and mention when something newer
+exists. The maintainer bumps the tested ceiling (`MAX_TESTED_VERSION` in
+`controller.py`) as each new release is validated on real hardware.
+
+Firmware is fetched from 8BitDo's Ultimate Software V2 backend (the same
+source Analogue's own controller-update link points at), with their legacy
+firmware feed as a fallback — the legacy feed stopped receiving 8BitDo 64
+releases after v2.04.
 
 ---
 

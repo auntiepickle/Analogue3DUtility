@@ -65,10 +65,19 @@ FIRMWARE_TYPE = 78
 # The newest firmware release this tool's flash path has actually been verified
 # against (encoded as major*100 + minor, so 204 == v2.04). Anything newer that
 # 8BitDo publishes is flagged as "untested" until a maintainer validates it and
-# bumps this value. See the "Supported firmware" section of the README.
-MAX_TESTED_VERSION = 204  # v2.04
+# bumps this value; the non-interactive flows (--auto, update-all) never flash
+# past it. See the "Supported firmware" section of the README.
+MAX_TESTED_VERSION = 205  # v2.05 (validated on hardware 2026-07-29: 2.04 -> 2.05 via update_all_to)
+# Legacy firmware feed (queried with a "Type: 78" header). 8BitDo stopped
+# publishing N64 releases here after 2.04 — kept only as a fallback.
 FIRMWARE_API = "http://dl.8bitdo.com:8080/firmware/select"
 FIRMWARE_API_BASE = "http://dl.8bitdo.com:8080"
+# The newer "Ultimate Software V2" backend — the one Analogue's own
+# controller-update link (analogue.link/3d-controller-update) points at.
+# 2.05+ exist ONLY here; it also mirrors every older release, so it is the
+# primary source. POST JSON {"firmware_type": 78, "beta": 0|1}; response is
+# {"code": 200, "data": [...]} with absolute `fileURL` download links.
+FIRMWARE_API_V2 = "https://support.8bitdo.com/restapi/link/v1/client/firmware/select"
 
 REPORT_ID_OUT = 0x81
 RESP_IGNORE_IDS = {0x03, 0x04}  # normal gamepad / keyboard input reports
@@ -259,18 +268,58 @@ class EightBitDo64:
 # --- firmware acquisition ------------------------------------------------
 def fetch_firmware_list(beta=False):
     """Return every available firmware release for the 64 (Type 78), newest
-    first. Each entry gets a `version_int` (e.g. 204 for 2.04) added."""
+    first. Each entry gets a `version_int` (e.g. 204 for 2.04) and an absolute
+    `download_url` added.
+
+    Queries the Ultimate Software V2 backend first (the only feed carrying
+    2.05+), falling back to the legacy dl.8bitdo.com feed if V2 is
+    unreachable. Do NOT trust the feeds' `md5` field for integrity — both
+    repeat one stale hash across releases (verified: the real 2.05 md5
+    differs from what the feed claims). Integrity comes from the fileSize
+    check in download_firmware() plus the .dat header checks in
+    parse_header()."""
+    lst = _fetch_firmware_list_v2(beta)
+    if lst is None:
+        lst = _fetch_firmware_list_legacy(beta)
+    if not lst:
+        raise ControllerError("8BitDo API returned no firmware for the 64 (Type 78).")
+    lst.sort(key=lambda e: e["version_int"], reverse=True)
+    return lst
+
+
+def _fetch_firmware_list_v2(beta):
+    """The Ultimate Software V2 feed. Returns a normalized list, or None on
+    any failure so the caller can fall back to the legacy feed."""
+    try:
+        resp = requests.post(
+            FIRMWARE_API_V2,
+            json={"firmware_type": FIRMWARE_TYPE, "beta": 1 if beta else 0},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        entries = body.get("data") or []
+        if body.get("code") != 200 or not entries:
+            return None
+        for e in entries:
+            e["version_int"] = round(float(e["file_version"]) * 100)
+            e["download_url"] = e["fileURL"]
+        return entries
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return None
+
+
+def _fetch_firmware_list_legacy(beta):
+    """The legacy dl.8bitdo.com:8080 feed (stale: nothing after 2.04)."""
     headers = {"Type": str(FIRMWARE_TYPE)}
     if beta:
         headers["Beta"] = "1"
     resp = requests.post(FIRMWARE_API, headers=headers, timeout=20)
     resp.raise_for_status()
     lst = resp.json().get("list") or []
-    if not lst:
-        raise ControllerError("8BitDo API returned no firmware for the 64 (Type 78).")
     for e in lst:
         e["version_int"] = round(float(e["version"]) * 100)
-    lst.sort(key=lambda e: e["version_int"], reverse=True)
+        e["download_url"] = FIRMWARE_API_BASE + e["filePathName"]
     return lst
 
 
@@ -279,8 +328,23 @@ def fetch_firmware_meta(beta=False):
     return fetch_firmware_list(beta)[0]
 
 
+def latest_tested(versions):
+    """Newest release this tool's flash path has been validated against
+    (version_int <= MAX_TESTED_VERSION), or None if every published release
+    is newer than that. The non-interactive flows flash this instead of the
+    absolute newest, so a release 8BitDo published yesterday is never applied
+    without a human explicitly choosing it — the interactive menu still
+    offers untested releases, tagged and with a warning. Public so frontends
+    (e.g. the desktop app) can compute "up to date" against the same ceiling
+    the update flows actually flash to."""
+    for e in versions:  # newest-first
+        if e["version_int"] <= MAX_TESTED_VERSION:
+            return e
+    return None
+
+
 def download_firmware(meta):
-    url = FIRMWARE_API_BASE + meta["filePathName"]
+    url = meta.get("download_url") or (FIRMWARE_API_BASE + meta["filePathName"])
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()
     blob = resp.content
@@ -492,7 +556,8 @@ def _wait_until_ready(expected, timeout=90):
 
 
 def update_to_latest(progress=None):
-    """Non-interactive: flash the latest firmware if the connected 64 is behind.
+    """Non-interactive: flash the newest TESTED firmware if the connected 64 is
+    behind it (never an untested release — that requires the interactive menu).
     Returns a short human-readable status string (used by the 'auto' flow)."""
     if hid is None:
         return "skipped (hidapi not installed)"
@@ -501,12 +566,21 @@ def update_to_latest(progress=None):
     if connected_count() > 1:
         return "skipped (multiple controllers connected - connect only one)"
     try:
-        latest = fetch_firmware_list()[0]
+        versions = fetch_firmware_list()
+        newest = versions[0]["version_int"]
+        latest = latest_tested(versions)
+        if latest is None:
+            return (f"skipped ({format_version(newest)} is available but untested "
+                    f"by this tool - flash it from the controller menu)")
         dev = EightBitDo64().open()
         try:
             current = dev.read_version()
             if current >= latest["version_int"]:
-                return f"already on {format_version(current)}"
+                msg = f"already on {format_version(current)}"
+                if newest > max(current, MAX_TESTED_VERSION):
+                    msg += (f" ({format_version(newest)} exists but is untested - "
+                            f"use the controller menu to flash it)")
+                return msg
             header = parse_header(download_firmware(latest))  # only download if behind
             flash(dev, header, progress=progress)
         finally:
@@ -519,10 +593,12 @@ def update_to_latest(progress=None):
 
 
 def update_all(progress=None, announce=None):
-    """Flash EVERY connected 8BitDo 64 to the latest firmware. Works regardless of
-    count (they share a generic serial, so we can't tell them apart - instead we
-    repeatedly flash any controller still on an older version until none remain,
-    re-enumerating between flashes because each flash reboots its controller).
+    """Flash EVERY connected 8BitDo 64 to the newest TESTED firmware (see
+    MAX_TESTED_VERSION — untested releases require the interactive menu with a
+    single controller connected). Works regardless of count (they share a
+    generic serial, so we can't tell them apart - instead we repeatedly flash
+    any controller still on an older version until none remain, re-enumerating
+    between flashes because each flash reboots its controller).
     Returns a summary dict: {total, updated, already, failed, note?}."""
     if hid is None:
         return {"total": 0, "updated": 0, "already": 0, "failed": 0, "note": "hidapi not installed"}
@@ -530,9 +606,15 @@ def update_all(progress=None, announce=None):
     if total == 0:
         return {"total": 0, "updated": 0, "already": 0, "failed": 0, "note": "no controller connected"}
     try:
-        latest = fetch_firmware_list()[0]
+        versions = fetch_firmware_list()
     except (requests.RequestException, ControllerError, ValueError) as e:
         return {"total": total, "updated": 0, "already": 0, "failed": 0, "note": f"firmware fetch failed: {e}"}
+    newest = versions[0]["version_int"]
+    latest = latest_tested(versions)
+    if latest is None:
+        return {"total": total, "updated": 0, "already": 0, "failed": 0,
+                "note": (f"{format_version(newest)} is available but untested by this "
+                         f"tool - flash it from the controller menu")}
     target = latest["version_int"]
     header = None
     updated = failed = 0
@@ -580,8 +662,12 @@ def update_all(progress=None, announce=None):
             return {"total": total, "updated": updated, "already": total - updated - failed,
                     "failed": failed, "note": note}
 
-    return {"total": total, "updated": updated,
-            "already": max(total - updated - failed, 0), "failed": failed}
+    summary = {"total": total, "updated": updated,
+               "already": max(total - updated - failed, 0), "failed": failed}
+    if newest > MAX_TESTED_VERSION:
+        summary["note"] = (f"{format_version(newest)} is out but untested by this "
+                           f"tool; the controller menu can flash it")
+    return summary
 
 
 def update_all_to(meta, progress=None, announce=None):
@@ -648,7 +734,7 @@ def _run_update_all():
         print(f"\nUpdating a controller {format_version(cur)} -> {format_version(tgt)} (do not unplug)...")
     summary = update_all(progress=_progress, announce=announce)
     print()
-    if summary.get("note") and not summary.get("updated"):
+    if summary.get("note"):
         print(f"  {summary['note']}")
     parts = [f"{summary.get('updated', 0)} updated", f"{summary.get('already', 0)} already current"]
     if summary.get("failed"):
@@ -700,7 +786,7 @@ def run_interactive():
     if n > 1:
         print(f"\n{n} 8BitDo 64 controllers are connected.")
         try:
-            ans = input(f"Update all {n} to the latest firmware? [Y/n]: ").strip().lower()
+            ans = input(f"Update all {n} to the latest tested firmware? [Y/n]: ").strip().lower()
         except EOFError:
             ans = ""
         if ans not in ("", "y", "yes"):
@@ -811,7 +897,8 @@ def run_interactive():
 
 __all__ = [
     "EightBitDo64", "ControllerError", "crc16_modbus", "format_version",
-    "fetch_firmware_list", "fetch_firmware_meta", "download_firmware",
+    "fetch_firmware_list", "fetch_firmware_meta", "latest_tested",
+    "MAX_TESTED_VERSION", "download_firmware",
     "parse_header", "flash", "reopen_and_read_version", "run_interactive",
     "is_connected", "connected_count", "update_to_latest", "update_all",
     "update_all_to",
